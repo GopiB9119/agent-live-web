@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Playwright browser profile + MCP runtime artifacts
+.playwright-edge-profile/
+.playwright-mcp/
+
+# Logs
+logs/
+*.log
+
+# Local editor/workspace settings
+.vscode/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Temp/system files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+desktop.ini

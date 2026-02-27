@@ -1,0 +1,19 @@
+﻿{
+  "name": "agent-works",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "agent:live-web": "node cli-agent.js",
+    "mcp:edge": "node playwright-edge-mcp.js",
+    "install:edge": "npx playwright install msedge",
+    "check": "node --check cli-agent.js && node --check edge-session.js && node --check nl-command-parser.js && node --check playwright-edge-mcp.js && node --check scripts/mcp-init-page.js",
+    "test": "npm run check"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}
