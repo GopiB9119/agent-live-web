@@ -6,6 +6,9 @@
   "scripts": {
     "agent:live-web": "node cli-agent.js",
     "mcp:edge": "node playwright-edge-mcp.js",
+    "mcp:owner:vscode": "node scripts/set-mcp-owner.js vscode",
+    "mcp:owner:python": "node scripts/set-mcp-owner.js python",
+    "mcp:owner:none": "node scripts/set-mcp-owner.js none",
     "install:edge": "npx playwright install msedge",
     "check": "node --check cli-agent.js && node --check edge-session.js && node --check nl-command-parser.js && node --check playwright-edge-mcp.js && node --check scripts/mcp-init-page.js",
     "test": "npm run check"
