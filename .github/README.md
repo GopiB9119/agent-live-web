@@ -23,6 +23,7 @@ Important:
 - `skills/web-works/SKILL.md`: reusable website workflow policy.
 - `skills/web-works/web-task.schema.json`: strict schema for JSON-driven web tasks.
 - `skills/web-works/web-task.template.json`: one template for all websites.
+- `skills/web-works/PROMPTS.md`: reusable high-power prompt pack (master/resume/deep/turbo).
 
 ## Ownership model (single source per concern)
 - Global behavior: `copilot-instructions.md`
@@ -47,7 +48,7 @@ Important:
 5. Execute with strict step verification.
 
 ## Operator checklist
-1. Set MCP owner before browser work (`vscode` or `python`).
+1. Use VS Code ownership mode (`vscode`) for browser work.
 2. Validate JSON task against `web-task.schema.json`.
 3. Run one tool action per step and verify result.
 4. Ask confirmation before irreversible side effects.

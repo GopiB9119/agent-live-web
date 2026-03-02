@@ -29,6 +29,11 @@
       "type": "string",
       "enum": ["explore", "extract", "automate", "qa"]
     },
+    "execution_profile": {
+      "type": "string",
+      "enum": ["balanced", "deep", "turbo"],
+      "default": "balanced"
+    },
     "site_profile": {
       "type": "string",
       "enum": ["generic", "whatsapp-web"],
@@ -61,6 +66,24 @@
         "headless": { "type": "boolean", "default": false }
       }
     },
+    "reasoning": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "understand_first": { "type": "boolean", "default": true },
+        "auto_escalate_deep_research": { "type": "boolean", "default": true },
+        "max_retries_per_step": { "type": "integer", "minimum": 0, "default": 1 }
+      }
+    },
+    "response_quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fix_grammar": { "type": "boolean", "default": true },
+        "strict_format": { "type": "boolean", "default": true },
+        "concise_step_reports": { "type": "boolean", "default": true }
+      }
+    },
     "session": {
       "type": "object",
       "additionalProperties": false,
@@ -71,6 +94,20 @@
           "minimum": 0,
           "default": 2000
         }
+      }
+    },
+    "resume": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "state_file": {
+          "type": "string",
+          "minLength": 1,
+          "default": ".playwright-mcp/resume-state.json"
+        },
+        "continue_from_last_step": { "type": "boolean", "default": true },
+        "require_preflight": { "type": "boolean", "default": true }
       }
     },
     "side_effect_policy": {

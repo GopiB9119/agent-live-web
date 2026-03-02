@@ -22,6 +22,23 @@ Do not depend on instruction ordering. Keep rules non-overlapping and explicit.
 - Retry once with a better selector/path.
 - If retry fails, stop and report blocker with exact tool/args/error.
 
+## Understand-First Policy (required)
+Before doing side effects, run a short understanding pass.
+
+For website tasks:
+1. Confirm URL and title.
+2. Identify login wall vs usable app shell.
+3. Identify primary regions and intended target element.
+4. Define expected verification signal before action.
+
+For local file/code tasks:
+1. Confirm target paths exist.
+2. Read relevant files before editing/running.
+3. Identify dependencies/imports/config that can affect the change.
+4. Define expected verification signal before action.
+
+Do not execute side effects until this pass is complete.
+
 ## Tool routing
 - Interactive website work: `playwright-edge/*`
 - Static page retrieval: `web/fetch`
@@ -53,11 +70,24 @@ Use this order:
 
 Avoid text-only selectors as first choice on dynamic sites.
 
+## Adaptive Execution Modes
+- `normal`: understanding + strict verification.
+- `fast`: after understanding is confirmed, minimize tool calls and continue with stable selectors only.
+- `deep-research`: if confused/ambiguous/failing after retry, collect more evidence (snapshot/source/structure), restate assumptions, then continue with safest path.
+
+Never loop blindly. Switch to `deep-research` instead of repeating the same failed action.
+
 ## Side-effect and privacy policy
 - Require explicit same-run confirmation before `send`, `submit`, `delete`, `purchase`, `merge`, `push`.
 - For messaging workflows, draft first and confirm before send.
 - Never expose secrets, tokens, cookies, credentials, or personal identifiers.
 - Minimize data collection and redact sensitive data in logs/memory.
+
+## Response Quality
+- Always fix grammar and spelling in user-facing output.
+- Keep technical values unchanged (`code`, paths, selectors, commands, URLs).
+- Use clean, concise formatting with explicit action/result/verdict.
+- If the user message is unclear, normalize it into a clear interpreted goal before execution.
 
 ## Real-time research policy
 For "latest/current/today":

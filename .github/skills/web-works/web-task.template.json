@@ -2,6 +2,7 @@
   "version": "1.1",
   "task_id": "replace-with-task-id",
   "mode": "automate",
+  "execution_profile": "balanced",
   "site_profile": "generic",
   "start_url": "https://example.com",
   "allowed_domains": [
@@ -17,9 +18,25 @@
     "timeout_seconds": 120,
     "headless": false
   },
+  "reasoning": {
+    "understand_first": true,
+    "auto_escalate_deep_research": true,
+    "max_retries_per_step": 1
+  },
+  "response_quality": {
+    "fix_grammar": true,
+    "strict_format": true,
+    "concise_step_reports": true
+  },
   "session": {
     "reuse_browser_context": true,
     "wait_after_navigation_ms": 2000
+  },
+  "resume": {
+    "enabled": true,
+    "state_file": ".playwright-mcp/resume-state.json",
+    "continue_from_last_step": true,
+    "require_preflight": true
   },
   "side_effect_policy": {
     "require_confirmation_for": [

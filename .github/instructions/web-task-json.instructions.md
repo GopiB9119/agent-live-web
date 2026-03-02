@@ -12,6 +12,9 @@ Keep website task JSON files strict, reusable, and easy for agents to execute.
 - Use explicit, measurable `success_criteria`.
 - Keep `steps` atomic: one action per step.
 - Add verification for every step.
+- Set `execution_profile` explicitly (`balanced`, `deep`, or `turbo`) based on task complexity.
+- Include `resume` block for cross-conversation continuation.
+- Include `reasoning` and `response_quality` blocks for consistent behavior.
 - Keep `auto_send_allowed` as `false` unless user explicitly requests auto-send.
 - Use `confirm_before: true` for side-effect actions.
 
@@ -29,5 +32,7 @@ Keep website task JSON files strict, reusable, and easy for agents to execute.
 1. Schema-valid JSON.
 2. `start_url` and `allowed_domains` match.
 3. Each step has `id`, `action`, and `verify`.
-4. Side-effect policy is explicit.
-5. Output format and fields are defined.
+4. `resume.state_file` is present and writable in workspace.
+5. `execution_profile`, `reasoning`, and `response_quality` are valid.
+6. Side-effect policy is explicit.
+7. Output format and fields are defined.

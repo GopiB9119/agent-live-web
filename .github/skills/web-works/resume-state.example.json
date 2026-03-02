@@ -1,0 +1,8 @@
+{
+  "task_id": "replace-with-task-id",
+  "status": "running",
+  "last_completed_step_id": "open-site",
+  "current_url": "https://example.com/dashboard",
+  "updated_at": "2026-03-03T12:00:00.000Z",
+  "notes": "Checkpoint written after verified step completion."
+}
