@@ -77,7 +77,42 @@ class EdgeSession {
     this.boundPages = new WeakSet();
     this.headless = Boolean(options.headless);
     this.userDataDir = options.userDataDir || process.env.EDGE_USER_DATA_DIR || path.join(process.cwd(), '.playwright-edge-profile');
+    this.localOperatorMode = toBool(
+      options.localOperatorMode !== undefined ? options.localOperatorMode : process.env.EDGE_LOCAL_OPERATOR_MODE,
+      true
+    );
+    this.workspaceRoot = path.resolve(options.workspaceRoot || process.env.EDGE_WORKSPACE_ROOT || process.cwd());
+    this.restrictWriteToWorkspace = toBool(
+      options.restrictWriteToWorkspace !== undefined
+        ? options.restrictWriteToWorkspace
+        : process.env.EDGE_RESTRICT_WRITE_TO_WORKSPACE,
+      true
+    );
+    this.allowDomHtmlAdd = toBool(
+      options.allowDomHtmlAdd !== undefined ? options.allowDomHtmlAdd : process.env.EDGE_ALLOW_DOM_HTML_ADD,
+      this.localOperatorMode
+    );
+    this.domFallbackOnFailure = toBool(
+      options.domFallbackOnFailure !== undefined
+        ? options.domFallbackOnFailure
+        : process.env.EDGE_DOM_FALLBACK_ON_FAILURE,
+      true
+    );
+    this.frameAwareLocators = toBool(
+      options.frameAwareLocators !== undefined
+        ? options.frameAwareLocators
+        : process.env.EDGE_FRAME_AWARE_LOCATORS,
+      true
+    );
     this.logFile = options.logFile || path.join(process.cwd(), 'logs', 'edge-agent.log');
+    this.writeLogFile = toBool(
+      options.writeLogFile !== undefined ? options.writeLogFile : process.env.EDGE_WRITE_LOG_FILE,
+      false
+    );
+    this.logToConsole = toBool(
+      options.logToConsole !== undefined ? options.logToConsole : process.env.EDGE_LOG_TO_CONSOLE,
+      false
+    );
     this.actionTimeout = toInt(options.actionTimeout || process.env.EDGE_ACTION_TIMEOUT_MS, 30000);
     this.navigationTimeout = toInt(options.navigationTimeout || process.env.EDGE_NAV_TIMEOUT_MS, 180000);
     this.retryCount = toInt(options.retryCount || process.env.EDGE_ACTION_RETRIES, 2);
@@ -90,7 +125,9 @@ class EdgeSession {
 
   async open() {
     await fs.promises.mkdir(this.userDataDir, { recursive: true });
-    await fs.promises.mkdir(path.dirname(this.logFile), { recursive: true });
+    if (this.writeLogFile) {
+      await fs.promises.mkdir(path.dirname(this.logFile), { recursive: true });
+    }
 
     this.context = await chromium.launchPersistentContext(this.userDataDir, {
       channel: 'msedge',
@@ -161,6 +198,9 @@ class EdgeSession {
           case 'delete':
             return this.handleDelete(params);
           case 'add':
+            if (!this.allowDomHtmlAdd) {
+              throw new Error('add action is disabled by security policy (EDGE_ALLOW_DOM_HTML_ADD=false)');
+            }
             return this.handleAdd(params);
           case 'exists':
             return this.handleExists(params);
@@ -259,19 +299,57 @@ class EdgeSession {
   async handleSearch(params) {
     if (!params.query) throw new Error('search requires query');
     const query = String(params.query);
-    const searchCandidates = [
-      this.page.getByRole('searchbox'),
-      this.page.locator('input[type="search"]'),
-      this.page.getByPlaceholder(/search/i),
-      this.page.getByLabel(/search/i),
-      this.page.getByRole('textbox', { name: /search/i }),
-      this.page.locator('input[aria-label*="search" i], textarea[aria-label*="search" i], [contenteditable="true"][aria-label*="search" i]')
-    ];
+    const beforeUrl = this.page.url();
+    const roots = this.getSearchRoots();
+    const searchCandidates = roots.flatMap((root) => [
+      root.getByRole('searchbox').first(),
+      root.locator('input[type="search"]').first(),
+      root.getByPlaceholder(/search/i).first(),
+      root.getByLabel(/search/i).first(),
+      root.getByRole('textbox', { name: /search/i }).first(),
+      root
+        .locator(
+          'input[aria-label*="search" i], textarea[aria-label*="search" i], [contenteditable="true"][aria-label*="search" i]'
+        )
+        .first()
+    ]);
     const searchInput = await this.firstVisibleLocator(searchCandidates);
-    if (!searchInput) throw new Error('No visible search field found on this page.');
-    await this.writeValueToLocator(searchInput, query, 'fill');
-    await searchInput.press('Enter');
-    return { query, submitted: true };
+    if (searchInput) {
+      await this.writeValueToLocator(searchInput, query, 'fill');
+      await searchInput.press('Enter');
+      const urlChanged = await this.waitForUrlChange(beforeUrl, 5000);
+      return { query, submitted: true, urlChanged };
+    }
+
+    if (this.domFallbackOnFailure) {
+      const domResult = await this.writeWithDomFallback({ text: 'search' }, query, 'fill');
+      if (domResult.ok) {
+        await this.page.keyboard.press('Enter').catch(() => {});
+        let urlChanged = await this.waitForUrlChange(beforeUrl, 3500);
+        if (!urlChanged) {
+          await this.page.evaluate(() => {
+            const active = document.activeElement;
+            if (!active) return false;
+            const isInput = ['INPUT', 'TEXTAREA'].includes(active.tagName) || active.isContentEditable;
+            if (!isInput) return false;
+            active.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+            active.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
+            if (active.form) {
+              if (typeof active.form.requestSubmit === 'function') {
+                active.form.requestSubmit();
+              } else {
+                active.form.submit();
+              }
+            }
+            return true;
+          }).catch(() => {});
+          urlChanged = await this.waitForUrlChange(beforeUrl, 3500);
+        }
+        return { query, submitted: true, fallback: 'dom', strategy: domResult.strategy, urlChanged };
+      }
+    }
+
+    throw new Error('No visible search field found on this page.');
   }
 
   async handleClick(action, params) {
@@ -282,24 +360,51 @@ class EdgeSession {
     if (action === 'clickByText' && !compatibleParams.text && compatibleParams.selector) {
       compatibleParams.text = compatibleParams.selector;
     }
-    const locator = await this.getLocator(compatibleParams);
-    await locator.scrollIntoViewIfNeeded();
-    await locator.click({ timeout: this.actionTimeout });
-    return { ok: true };
+    try {
+      const locator = await this.getLocator(compatibleParams);
+      await locator.scrollIntoViewIfNeeded();
+      await locator.click({ timeout: this.actionTimeout });
+      return { ok: true };
+    } catch (error) {
+      if (!this.domFallbackOnFailure) throw error;
+      const domResult = await this.clickWithDomFallback(compatibleParams);
+      if (domResult.ok) {
+        return { ok: true, fallback: 'dom', strategy: domResult.strategy };
+      }
+      throw error;
+    }
   }
 
   async handleFill(params) {
     if (params.value === undefined) throw new Error('Missing value');
-    const locator = await this.getInputLocator(params);
-    await this.writeValueToLocator(locator, String(params.value), 'fill');
-    return { ok: true };
+    try {
+      const locator = await this.getInputLocator(params);
+      await this.writeValueToLocator(locator, String(params.value), 'fill');
+      return { ok: true };
+    } catch (error) {
+      if (!this.domFallbackOnFailure) throw error;
+      const domResult = await this.writeWithDomFallback(params, String(params.value), 'fill');
+      if (domResult.ok) {
+        return { ok: true, fallback: 'dom', strategy: domResult.strategy };
+      }
+      throw error;
+    }
   }
 
   async handleType(params) {
     if (params.value === undefined) throw new Error('Missing value');
-    const locator = await this.getInputLocator(params);
-    await this.writeValueToLocator(locator, String(params.value), 'type');
-    return { ok: true };
+    try {
+      const locator = await this.getInputLocator(params);
+      await this.writeValueToLocator(locator, String(params.value), 'type');
+      return { ok: true };
+    } catch (error) {
+      if (!this.domFallbackOnFailure) throw error;
+      const domResult = await this.writeWithDomFallback(params, String(params.value), 'type');
+      if (domResult.ok) {
+        return { ok: true, fallback: 'dom', strategy: domResult.strategy };
+      }
+      throw error;
+    }
   }
 
   async handleDelete(params) {
@@ -334,14 +439,31 @@ class EdgeSession {
   }
 
   async handleExists(params) {
-    const count = await this.countMatches(params);
-    return { exists: count > 0 };
+    try {
+      const count = await this.countMatches(params);
+      return { exists: count > 0 };
+    } catch (_) {
+      if (!this.domFallbackOnFailure) {
+        return { exists: false };
+      }
+      const domResult = await this.existsWithDomFallback(params);
+      return { exists: Boolean(domResult.exists), fallback: 'dom' };
+    }
   }
 
   async handleGetText(params) {
-    const locator = await this.getLocator(params);
-    const text = await locator.textContent();
-    return { text: text ? text.trim() : '' };
+    try {
+      const locator = await this.getLocator(params);
+      const text = await locator.textContent();
+      return { text: text ? text.trim() : '' };
+    } catch (error) {
+      if (!this.domFallbackOnFailure) throw error;
+      const domResult = await this.getTextWithDomFallback(params);
+      if (domResult.ok) {
+        return { text: domResult.text, fallback: 'dom' };
+      }
+      throw error;
+    }
   }
 
   async handleWaitFor(params) {
@@ -368,7 +490,7 @@ class EdgeSession {
     ]);
 
     const defaultName = download.suggestedFilename();
-    const savePath = path.resolve(params.savePath || path.join('downloads', defaultName));
+    const savePath = this.resolveOutputPath(params.savePath, path.join('downloads', defaultName));
     await fs.promises.mkdir(path.dirname(savePath), { recursive: true });
     await download.saveAs(savePath);
     return { path: savePath };
@@ -391,7 +513,7 @@ class EdgeSession {
   }
 
   async handleScreenshot(params) {
-    const outputPath = path.resolve(params.path || `screenshot-${Date.now()}.png`);
+    const outputPath = this.resolveOutputPath(params.path, `screenshot-${Date.now()}.png`);
     await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
     await this.page.screenshot({ path: outputPath, fullPage: true });
     return { path: outputPath };
@@ -408,46 +530,346 @@ class EdgeSession {
   async handleStopTrace(params = {}) {
     if (!this.context) throw new Error('Browser context is not ready');
     if (!this.traceActive) return { status: 'not-running' };
-    const tracePath = path.resolve(params.path || path.join('traces', `trace-${Date.now()}.zip`));
+    const tracePath = this.resolveOutputPath(params.path, path.join('traces', `trace-${Date.now()}.zip`));
     await fs.promises.mkdir(path.dirname(tracePath), { recursive: true });
     await this.context.tracing.stop({ path: tracePath });
     this.traceActive = false;
     return { status: 'stopped', path: tracePath };
   }
 
+  async waitForUrlChange(previousUrl, timeoutMs = 5000) {
+    try {
+      await this.page.waitForURL((url) => String(url) !== previousUrl, { timeout: timeoutMs });
+      return true;
+    } catch (_) {
+      return this.page.url() !== previousUrl;
+    }
+  }
+
+  resolveOutputPath(requestedPath, defaultRelativePath) {
+    const candidate = path.resolve(requestedPath || defaultRelativePath);
+    if (!this.restrictWriteToWorkspace) {
+      return candidate;
+    }
+
+    const relative = path.relative(this.workspaceRoot, candidate);
+    const isInsideWorkspace = Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
+    const isWorkspaceRoot = relative === '';
+    if (isInsideWorkspace || isWorkspaceRoot) {
+      return candidate;
+    }
+
+    throw new Error(`Output path is blocked by security policy. Use a path under workspace: ${this.workspaceRoot}`);
+  }
+
+  getSearchRoots() {
+    if (!this.frameAwareLocators || !this.page) {
+      return [this.page];
+    }
+    const roots = [this.page];
+    for (const frame of this.page.frames()) {
+      if (frame === this.page.mainFrame()) continue;
+      roots.push(frame);
+    }
+    return roots;
+  }
+
+  async clickWithDomFallback(params) {
+    return this.page.evaluate((input) => {
+      const isVisible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        if (!style || style.visibility === 'hidden' || style.display === 'none') return false;
+        return Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+      };
+
+      const normalize = (value) => String(value || '').trim().toLowerCase();
+      const clickElement = (el) => {
+        if (!el) return false;
+        el.scrollIntoView({ block: 'center', inline: 'center' });
+        el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        return true;
+      };
+
+      let element = null;
+      let strategy = '';
+
+      if (input.selector) {
+        try {
+          element = document.querySelector(input.selector);
+          strategy = 'selector';
+        } catch (_) {
+          element = null;
+        }
+      } else if (input.xpath) {
+        try {
+          const result = document.evaluate(input.xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+          element = result.singleNodeValue;
+          strategy = 'xpath';
+        } catch (_) {
+          element = null;
+        }
+      } else if (input.text) {
+        const wanted = normalize(input.text);
+        const candidates = Array.from(
+          document.querySelectorAll('button,a,[role="button"],[role="link"],[role="option"],[role="menuitem"],label,span,div')
+        );
+        element = candidates.find((candidate) => isVisible(candidate) && normalize(candidate.innerText).includes(wanted)) || null;
+        strategy = 'text-scan';
+      }
+
+      if (!element || !isVisible(element)) {
+        return { ok: false };
+      }
+      return { ok: clickElement(element), strategy };
+    }, params);
+  }
+
+  async writeWithDomFallback(params, value, mode) {
+    return this.page.evaluate(({ target, inputValue, inputMode }) => {
+      const normalize = (v) => String(v || '').trim().toLowerCase();
+      const isVisible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        if (!style || style.visibility === 'hidden' || style.display === 'none') return false;
+        return Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+      };
+
+      const writeToElement = (el) => {
+        if (!el) return false;
+        const tag = (el.tagName || '').toLowerCase();
+        const isEditable = Boolean(el.isContentEditable);
+
+        el.scrollIntoView({ block: 'center', inline: 'center' });
+        el.focus();
+
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+          const current = String(el.value || '');
+          el.value = inputMode === 'type' ? `${current}${inputValue}` : inputValue;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
+
+        if (isEditable) {
+          const current = String(el.textContent || '');
+          el.textContent = inputMode === 'type' ? `${current}${inputValue}` : inputValue;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          return true;
+        }
+
+        return false;
+      };
+
+      const byLabelOrHint = (hint) => {
+        const wanted = normalize(hint);
+        if (!wanted) return null;
+
+        const directCandidates = Array.from(document.querySelectorAll('input,textarea,[contenteditable="true"],[role="textbox"]'));
+        const direct = directCandidates.find((el) => {
+          const label = normalize(el.getAttribute('aria-label'));
+          const placeholder = normalize(el.getAttribute('placeholder'));
+          const name = normalize(el.getAttribute('name'));
+          return isVisible(el) && (label.includes(wanted) || placeholder.includes(wanted) || name.includes(wanted));
+        });
+        if (direct) return direct;
+
+        const labels = Array.from(document.querySelectorAll('label'));
+        for (const label of labels) {
+          if (!isVisible(label)) continue;
+          if (!normalize(label.innerText).includes(wanted)) continue;
+          const controlId = label.getAttribute('for');
+          if (controlId) {
+            const bound = document.getElementById(controlId);
+            if (bound && isVisible(bound)) return bound;
+          }
+          const nested = label.querySelector('input,textarea,[contenteditable="true"],[role="textbox"]');
+          if (nested && isVisible(nested)) return nested;
+        }
+
+        return null;
+      };
+
+      let element = null;
+      let strategy = '';
+
+      if (target.selector) {
+        try {
+          element = document.querySelector(target.selector);
+          strategy = 'selector';
+        } catch (_) {
+          element = null;
+        }
+      } else if (target.xpath) {
+        try {
+          const result = document.evaluate(target.xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+          element = result.singleNodeValue;
+          strategy = 'xpath';
+        } catch (_) {
+          element = null;
+        }
+      } else if (target.text) {
+        element = byLabelOrHint(target.text);
+        strategy = 'label-hint';
+      }
+
+      if (!element || !isVisible(element)) {
+        return { ok: false };
+      }
+      return { ok: writeToElement(element), strategy };
+    }, { target: params, inputValue: value, inputMode: mode });
+  }
+
+  async existsWithDomFallback(params) {
+    return this.page.evaluate((input) => {
+      const normalize = (value) => String(value || '').trim().toLowerCase();
+      const bySelector = () => {
+        try {
+          return Boolean(input.selector && document.querySelector(input.selector));
+        } catch (_) {
+          return false;
+        }
+      };
+      const byXPath = () => {
+        if (!input.xpath) return false;
+        try {
+          const result = document.evaluate(input.xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+          return Boolean(result.singleNodeValue);
+        } catch (_) {
+          return false;
+        }
+      };
+      const byText = () => {
+        if (!input.text) return false;
+        const wanted = normalize(input.text);
+        const all = Array.from(document.querySelectorAll('body *'));
+        return all.some((el) => normalize(el.innerText).includes(wanted));
+      };
+      return { exists: bySelector() || byXPath() || byText() };
+    }, params);
+  }
+
+  async getTextWithDomFallback(params) {
+    return this.page.evaluate((input) => {
+      const normalize = (value) => String(value || '').trim().toLowerCase();
+      let element = null;
+
+      if (input.selector) {
+        try {
+          element = document.querySelector(input.selector);
+        } catch (_) {
+          element = null;
+        }
+      } else if (input.xpath) {
+        try {
+          const result = document.evaluate(input.xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+          element = result.singleNodeValue;
+        } catch (_) {
+          element = null;
+        }
+      } else if (input.text) {
+        const wanted = normalize(input.text);
+        const all = Array.from(document.querySelectorAll('body *'));
+        element = all.find((el) => normalize(el.innerText).includes(wanted)) || null;
+      }
+
+      if (!element) {
+        return { ok: false, text: '' };
+      }
+      const text = (element.textContent || element.value || '').trim();
+      return { ok: true, text };
+    }, params);
+  }
+
   async countMatches(params) {
-    if (params.selector) return this.page.locator(params.selector).count();
-    if (params.xpath) return this.page.locator(`xpath=${params.xpath}`).count();
+    const roots = this.getSearchRoots();
+    if (params.selector) {
+      let total = 0;
+      for (const root of roots) {
+        try {
+          total += await root.locator(params.selector).count();
+        } catch (_) {
+          // Ignore detached/inaccessible frames.
+        }
+      }
+      return total;
+    }
+    if (params.xpath) {
+      let total = 0;
+      for (const root of roots) {
+        try {
+          total += await root.locator(`xpath=${params.xpath}`).count();
+        } catch (_) {
+          // Ignore detached/inaccessible frames.
+        }
+      }
+      return total;
+    }
     if (params.text) {
-      const candidates = this.buildTextCandidateLocators(params.text);
+      const candidates = roots.flatMap((root) => this.buildTextCandidateLocators(params.text, root));
       let total = 0;
       for (const candidate of candidates) {
-        total += await candidate.count();
+        try {
+          total += await candidate.count();
+        } catch (_) {
+          // Ignore detached/inaccessible frames.
+        }
       }
       return total;
     }
     return 0;
   }
 
-  buildTextCandidateLocators(text) {
+  buildTextCandidateLocators(text, root = this.page) {
     const normalized = String(text).trim();
     const exactRegex = new RegExp(`^\\s*${escapeRegex(normalized)}\\s*$`, 'i');
     const hasWhitespace = /\s/.test(normalized);
     const candidates = [
-      this.page.getByRole('button', { name: exactRegex }),
-      this.page.getByRole('link', { name: exactRegex }),
-      this.page.getByRole('tab', { name: exactRegex }),
-      this.page.getByRole('menuitem', { name: exactRegex }),
-      this.page.getByRole('option', { name: exactRegex }),
-      this.page.getByLabel(normalized, { exact: false }),
-      this.page.getByPlaceholder(normalized, { exact: false }),
-      this.page.getByText(normalized, { exact: false })
+      root.getByRole('button', { name: exactRegex }),
+      root.getByRole('link', { name: exactRegex }),
+      root.getByRole('tab', { name: exactRegex }),
+      root.getByRole('menuitem', { name: exactRegex }),
+      root.getByRole('option', { name: exactRegex }),
+      root.getByLabel(normalized, { exact: false }),
+      root.getByPlaceholder(normalized, { exact: false }),
+      root.getByText(normalized, { exact: false })
     ];
     if (!hasWhitespace) {
-      candidates.push(this.page.locator(`[aria-label="${escapeAttrValue(normalized)}" i]`));
-      candidates.push(this.page.locator(`[title="${escapeAttrValue(normalized)}" i]`));
+      candidates.push(root.locator(`[aria-label="${escapeAttrValue(normalized)}" i]`));
+      candidates.push(root.locator(`[title="${escapeAttrValue(normalized)}" i]`));
     }
     return candidates.map((candidate) => candidate.first());
+  }
+
+  buildInputCandidateLocators(text, root = this.page) {
+    const target = String(text).trim();
+    const targetRegex = new RegExp(escapeRegex(target), 'i');
+    return [
+      root.getByLabel(target, { exact: false }).first(),
+      root.getByPlaceholder(target, { exact: false }).first(),
+      root.getByRole('textbox', { name: targetRegex }).first(),
+      root
+        .locator(
+          `input[aria-label*="${escapeAttrValue(target)}" i], textarea[aria-label*="${escapeAttrValue(target)}" i], [contenteditable="true"][aria-label*="${escapeAttrValue(target)}" i]`
+        )
+        .first()
+    ];
+  }
+
+  buildLocatorCandidates(params) {
+    const roots = this.getSearchRoots();
+    if (params.selector) {
+      return roots.map((root) => root.locator(params.selector).first());
+    }
+    if (params.xpath) {
+      return roots.map((root) => root.locator(`xpath=${params.xpath}`).first());
+    }
+    if (params.text) {
+      return roots.flatMap((root) => this.buildTextCandidateLocators(params.text, root));
+    }
+    return [];
   }
 
   async firstVisibleLocator(candidates, perCandidateTimeout = 1500) {
@@ -464,37 +886,47 @@ class EdgeSession {
 
   async firstAttachedLocator(candidates) {
     for (const candidate of candidates) {
-      if (await candidate.count()) return candidate;
+      try {
+        if (await candidate.count()) return candidate;
+      } catch (_) {
+        // Ignore detached/inaccessible frames.
+      }
     }
     return null;
   }
 
   async getLocator(params) {
-    if (params.selector) return this.page.locator(params.selector).first();
-    if (params.xpath) return this.page.locator(`xpath=${params.xpath}`).first();
-    if (params.text) {
-      const candidates = this.buildTextCandidateLocators(params.text);
+    const candidates = this.buildLocatorCandidates(params);
+    if (candidates.length) {
       const visible = await this.firstVisibleLocator(candidates);
       if (visible) return visible;
       const attached = await this.firstAttachedLocator(candidates);
       if (attached) return attached;
-      throw new Error(`No element found for text "${params.text}".`);
+      if (params.text) throw new Error(`No element found for text "${params.text}".`);
+      if (params.selector) throw new Error(`No element found for selector "${params.selector}".`);
+      if (params.xpath) throw new Error(`No element found for xpath "${params.xpath}".`);
     }
     throw new Error('Missing selector target. Use selector, xpath, or text.');
   }
 
   async getInputLocator(params) {
-    if (params.selector) return this.page.locator(params.selector).first();
-    if (params.xpath) return this.page.locator(`xpath=${params.xpath}`).first();
+    const roots = this.getSearchRoots();
+    if (params.selector) {
+      const candidates = roots.map((root) => root.locator(params.selector).first());
+      const visible = await this.firstVisibleLocator(candidates);
+      if (visible) return visible;
+      const attached = await this.firstAttachedLocator(candidates);
+      if (attached) return attached;
+    }
+    if (params.xpath) {
+      const candidates = roots.map((root) => root.locator(`xpath=${params.xpath}`).first());
+      const visible = await this.firstVisibleLocator(candidates);
+      if (visible) return visible;
+      const attached = await this.firstAttachedLocator(candidates);
+      if (attached) return attached;
+    }
     if (params.text) {
-      const target = String(params.text).trim();
-      const targetRegex = new RegExp(escapeRegex(target), 'i');
-      const candidates = [
-        this.page.getByLabel(target, { exact: false }).first(),
-        this.page.getByPlaceholder(target, { exact: false }).first(),
-        this.page.getByRole('textbox', { name: targetRegex }).first(),
-        this.page.locator(`input[aria-label*="${escapeAttrValue(target)}" i], textarea[aria-label*="${escapeAttrValue(target)}" i], [contenteditable="true"][aria-label*="${escapeAttrValue(target)}" i]`).first()
-      ];
+      const candidates = roots.flatMap((root) => this.buildInputCandidateLocators(params.text, root));
       const visible = await this.firstVisibleLocator(candidates);
       if (visible) return visible;
       const attached = await this.firstAttachedLocator(candidates);
@@ -542,11 +974,15 @@ class EdgeSession {
     const timestamp = new Date().toISOString();
     const suffix = metadata ? ` ${JSON.stringify(metadata)}` : '';
     const line = `[${timestamp}] [${level}] ${message}${suffix}`;
-    console.log(line);
-    try {
-      fs.appendFileSync(this.logFile, `${line}\n`, 'utf8');
-    } catch (_) {
-      // Keep automation running if logging to file fails.
+    if (this.logToConsole) {
+      console.log(line);
+    }
+    if (this.writeLogFile) {
+      try {
+        fs.appendFileSync(this.logFile, `${line}\n`, 'utf8');
+      } catch (_) {
+        // Keep automation running if logging to file fails.
+      }
     }
   }
 }

@@ -2,13 +2,28 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
+const defaultRuntimeRoot = process.env.LOCALAPPDATA
+  ? path.join(process.env.LOCALAPPDATA, 'PlaywrightMCP')
+  : path.join(process.cwd(), '.playwright-mcp');
 const userDataDir =
-  process.env.PLAYWRIGHT_MCP_USER_DATA_DIR || path.join(process.cwd(), '.playwright-mcp', 'edge-profile');
-const outputDir = process.env.PLAYWRIGHT_MCP_OUTPUT_DIR || path.join(process.cwd(), '.playwright-mcp', 'output');
+  process.env.PLAYWRIGHT_MCP_USER_DATA_DIR || path.join(defaultRuntimeRoot, 'edge-profile');
+const outputDir = process.env.PLAYWRIGHT_MCP_OUTPUT_DIR || path.join(defaultRuntimeRoot, 'output');
 const initPageScript = path.join(process.cwd(), 'scripts', 'mcp-init-page.js');
 const ownerFilePath =
-  process.env.PLAYWRIGHT_MCP_OWNER_FILE || path.join(process.cwd(), '.playwright-mcp', 'active-owner.txt');
-const owner = String(process.env.PLAYWRIGHT_MCP_OWNER || 'unknown').trim().toLowerCase();
+  process.env.PLAYWRIGHT_MCP_OWNER_FILE || path.join(defaultRuntimeRoot, 'active-owner.txt');
+const owner = (() => {
+  const envOwner = normalizeOwner(process.env.PLAYWRIGHT_MCP_OWNER || '');
+  if (envOwner) return envOwner;
+  try {
+    if (fs.existsSync(ownerFilePath)) {
+      const fileOwner = normalizeOwner(fs.readFileSync(ownerFilePath, 'utf8'));
+      if (fileOwner) return fileOwner;
+    }
+  } catch (_) {
+    // best effort
+  }
+  return 'vscode';
+})();
 const explicitActiveOwner = String(process.env.PLAYWRIGHT_MCP_ACTIVE_OWNER || '').trim().toLowerCase();
 const lockFilePath = path.join(userDataDir, '.mcp-owner-lock.json');
 
@@ -93,9 +108,10 @@ function acquireOwnerLock() {
   }
 }
 
-const persistProfile = toBool(process.env.PLAYWRIGHT_MCP_PERSIST_PROFILE, false);
+const persistProfile = toBool(process.env.PLAYWRIGHT_MCP_PERSIST_PROFILE, true);
 const saveSession = toBool(process.env.PLAYWRIGHT_MCP_SAVE_SESSION, false);
 const saveTrace = toBool(process.env.PLAYWRIGHT_MCP_SAVE_TRACE, false);
+const forceOwner = toBool(process.env.PLAYWRIGHT_MCP_FORCE_OWNER, true);
 const outputMode = process.env.PLAYWRIGHT_MCP_OUTPUT_MODE || 'stdout';
 const snapshotMode = process.env.PLAYWRIGHT_MCP_SNAPSHOT_MODE || 'incremental';
 const consoleLevel = process.env.PLAYWRIGHT_MCP_CONSOLE_LEVEL || 'error';
@@ -106,23 +122,35 @@ const allowedHosts = process.env.PLAYWRIGHT_MCP_ALLOWED_HOSTS || '';
 const allowedOrigins = process.env.PLAYWRIGHT_MCP_ALLOWED_ORIGINS || '';
 const blockedOrigins = process.env.PLAYWRIGHT_MCP_BLOCKED_ORIGINS || '';
 const blockServiceWorkers = toBool(process.env.PLAYWRIGHT_MCP_BLOCK_SERVICE_WORKERS, false);
+const cdpEndpoint = String(process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || '').trim();
 
 fs.mkdirSync(outputDir, { recursive: true });
-if (persistProfile) {
+if (persistProfile && !cdpEndpoint) {
   fs.mkdirSync(userDataDir, { recursive: true });
 }
 fs.mkdirSync(path.dirname(ownerFilePath), { recursive: true });
 
 const activeOwner = getActiveOwner();
 if (activeOwner && owner && owner !== activeOwner) {
-  info(`[MCP] Owner blocked. Active owner is '${activeOwner}', current owner is '${owner}'. Exiting.`);
-  process.exit(2);
+  if (!forceOwner) {
+    info(`[MCP] Owner blocked. Active owner is '${activeOwner}', current owner is '${owner}'. Exiting.`);
+    process.exit(2);
+  }
+  info(`[MCP] Owner override: active owner '${activeOwner}' will be replaced with '${owner}' if lock is available.`);
 }
 
 const lockState = acquireOwnerLock();
 if (!lockState.ok) {
   info(`[MCP] ${lockState.reason}`);
   process.exit(3);
+}
+
+try {
+  if (owner) {
+    fs.writeFileSync(ownerFilePath, `${owner}\n`, 'utf8');
+  }
+} catch (_) {
+  // best effort
 }
 
 const baseArgs = [
@@ -150,7 +178,9 @@ if (sharedBrowserContext) {
   baseArgs.push('--shared-browser-context');
 }
 
-if (persistProfile) {
+if (cdpEndpoint) {
+  baseArgs.push('--cdp-endpoint', cdpEndpoint);
+} else if (persistProfile) {
   baseArgs.push('--user-data-dir', userDataDir);
 } else {
   baseArgs.push('--isolated');
@@ -181,6 +211,7 @@ info(`[MCP] Artifact mode: saveSession=${saveSession}, saveTrace=${saveTrace}, o
 info(`[MCP] Runtime mode: outputMode=${outputMode}, snapshotMode=${snapshotMode}, consoleLevel=${consoleLevel}`);
 info(`[MCP] Timeouts: action=${timeoutActionMs}ms, navigation=${timeoutNavigationMs}ms`);
 info(`[MCP] Shared browser context: ${sharedBrowserContext}`);
+if (cdpEndpoint) info(`[MCP] CDP endpoint: ${cdpEndpoint}`);
 info(`[MCP] Owner: ${owner} | Active owner: ${activeOwner || '(unset)'}`);
 info(`[MCP] Owner lock: ${lockFilePath}`);
 if (allowedHosts.trim()) info(`[MCP] Network allow hosts: ${allowedHosts.trim()}`);

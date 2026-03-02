@@ -1,4 +1,9 @@
-﻿const wiredContexts = new WeakSet();
+const wiredContexts = new WeakSet();
+const settleDelayMs = 250;
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function pruneBlankTabs(context) {
   const pages = context.pages().filter((page) => !page.isClosed());
@@ -19,17 +24,25 @@ async function focusLatestRealPage(context) {
   await nonBlankPages[nonBlankPages.length - 1].bringToFront().catch(() => {});
 }
 
+async function settleTabs(context, attempts = 3) {
+  for (let index = 0; index < attempts; index += 1) {
+    await pruneBlankTabs(context);
+    await focusLatestRealPage(context);
+    if (index < attempts - 1) {
+      await wait(settleDelayMs);
+    }
+  }
+}
+
 module.exports.default = async function initPage({ page }) {
   const context = page.context();
 
   if (!wiredContexts.has(context)) {
     wiredContexts.add(context);
     context.on('page', async () => {
-      await pruneBlankTabs(context);
-      await focusLatestRealPage(context);
+      await settleTabs(context);
     });
   }
 
-  await pruneBlankTabs(context);
-  await focusLatestRealPage(context);
+  await settleTabs(context);
 };

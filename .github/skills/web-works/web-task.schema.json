@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local/web-task.schema.json",
+  "title": "WebTask",
+  "description": "Structured task definition for fast, reliable website execution by an LLM agent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "task_id",
+    "mode",
+    "start_url",
+    "objective",
+    "success_criteria",
+    "side_effect_policy",
+    "steps",
+    "output"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["1.0", "1.1"]
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["explore", "extract", "automate", "qa"]
+    },
+    "site_profile": {
+      "type": "string",
+      "enum": ["generic", "whatsapp-web"],
+      "default": "generic"
+    },
+    "start_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "allowed_domains": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "default": []
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1
+    },
+    "success_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_steps": { "type": "integer", "minimum": 1, "default": 20 },
+        "timeout_seconds": { "type": "integer", "minimum": 1, "default": 120 },
+        "headless": { "type": "boolean", "default": false }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reuse_browser_context": { "type": "boolean", "default": true },
+        "wait_after_navigation_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 2000
+        }
+      }
+    },
+    "side_effect_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["require_confirmation_for", "auto_send_allowed"],
+      "properties": {
+        "require_confirmation_for": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["submit", "delete", "purchase", "send", "merge", "push"]
+          },
+          "default": ["submit", "delete", "purchase", "send", "merge", "push"]
+        },
+        "auto_send_allowed": { "type": "boolean", "default": false }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "action", "verify"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "action": {
+            "type": "string",
+            "enum": [
+              "navigate",
+              "click",
+              "type",
+              "press",
+              "select",
+              "wait",
+              "check",
+              "extract",
+              "scroll",
+              "download",
+              "upload",
+              "screenshot"
+            ]
+          },
+          "target": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "selector": { "type": "string" },
+              "selector_type": {
+                "type": "string",
+                "enum": ["css", "role", "aria", "data", "id", "name", "label", "placeholder", "xpath", "text"]
+              },
+              "url": { "type": "string", "format": "uri" },
+              "text": { "type": "string" },
+              "value": { "type": "string" },
+              "key": { "type": "string" }
+            }
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 100,
+            "default": 5000
+          },
+          "confirm_before": {
+            "type": "boolean",
+            "default": false
+          },
+          "notes": { "type": "string" },
+          "verify": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "url_contains": { "type": "string" },
+              "url_equals": { "type": "string", "format": "uri" },
+              "element_visible": { "type": "string" },
+              "element_hidden": { "type": "string" },
+              "text_contains": { "type": "string" },
+              "title_contains": { "type": "string" },
+              "download": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "extension": { "type": "string" },
+                  "size_gt": { "type": "integer", "minimum": 1 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "fields"],
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": ["summary", "json", "table", "checklist"]
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "save_to": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

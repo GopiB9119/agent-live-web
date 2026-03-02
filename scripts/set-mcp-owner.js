@@ -2,15 +2,17 @@ const fs = require('fs');
 const path = require('path');
 
 const requested = String(process.argv[2] || '').trim().toLowerCase();
-const valid = new Set(['vscode', 'python', 'none']);
+const valid = new Set(['vscode', 'none']);
 
 if (!valid.has(requested)) {
-  console.error('Usage: node scripts/set-mcp-owner.js <vscode|python|none>');
+  console.error('Usage: node scripts/set-mcp-owner.js <vscode|none>');
   process.exit(1);
 }
 
-const ownerFile =
-  process.env.PLAYWRIGHT_MCP_OWNER_FILE || path.join(process.cwd(), '.playwright-mcp', 'active-owner.txt');
+const defaultRuntimeRoot = process.env.LOCALAPPDATA
+  ? path.join(process.env.LOCALAPPDATA, 'PlaywrightMCP')
+  : path.join(process.cwd(), '.playwright-mcp');
+const ownerFile = process.env.PLAYWRIGHT_MCP_OWNER_FILE || path.join(defaultRuntimeRoot, 'active-owner.txt');
 
 fs.mkdirSync(path.dirname(ownerFile), { recursive: true });
 

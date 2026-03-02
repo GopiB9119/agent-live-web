@@ -1,0 +1,68 @@
+{
+  "version": "1.1",
+  "task_id": "replace-with-task-id",
+  "mode": "automate",
+  "site_profile": "generic",
+  "start_url": "https://example.com",
+  "allowed_domains": [
+    "example.com"
+  ],
+  "objective": "Describe the exact website outcome.",
+  "success_criteria": [
+    "Define measurable result 1",
+    "Define measurable result 2"
+  ],
+  "constraints": {
+    "max_steps": 20,
+    "timeout_seconds": 120,
+    "headless": false
+  },
+  "session": {
+    "reuse_browser_context": true,
+    "wait_after_navigation_ms": 2000
+  },
+  "side_effect_policy": {
+    "require_confirmation_for": [
+      "submit",
+      "delete",
+      "purchase",
+      "send",
+      "merge",
+      "push"
+    ],
+    "auto_send_allowed": false
+  },
+  "steps": [
+    {
+      "id": "open-site",
+      "action": "navigate",
+      "target": {
+        "url": "https://example.com"
+      },
+      "verify": {
+        "url_contains": "example.com"
+      }
+    },
+    {
+      "id": "do-action",
+      "action": "click",
+      "target": {
+        "selector": "#replace-selector",
+        "selector_type": "css"
+      },
+      "verify": {
+        "element_visible": "#replace-selector"
+      }
+    }
+  ],
+  "output": {
+    "format": "json",
+    "fields": [
+      "task_id",
+      "final_url",
+      "result",
+      "evidence"
+    ],
+    "save_to": "output/replace-task-output.json"
+  }
+}
