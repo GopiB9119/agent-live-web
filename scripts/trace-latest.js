@@ -74,6 +74,18 @@ function getTagValue(span, key) {
   return tag ? tag.value : undefined;
 }
 
+function matchesStatus(span, expectedStatus) {
+  if (!expectedStatus) return true;
+  const actual = String(getTagValue(span, 'otel.status_code') || 'UNSET').trim().toUpperCase();
+  return actual === expectedStatus;
+}
+
+function matchesMinDuration(span, minDurationMs) {
+  if (!Number.isFinite(minDurationMs) || minDurationMs <= 0) return true;
+  const durationMs = Number(span.duration || 0) / 1000;
+  return durationMs >= minDurationMs;
+}
+
 function microsToIso(value) {
   const millis = Math.floor(Number(value) / 1000);
   return Number.isFinite(millis) ? new Date(millis).toISOString() : 'unknown';
@@ -101,13 +113,18 @@ function printTrace(trace, span, processMap) {
   const operation = String(process.env.TRACE_OPERATION || 'mcp.server.launch').trim();
   const lookback = String(process.env.TRACE_LOOKBACK || '1h').trim();
   const limit = toInt(process.env.TRACE_LIMIT || 50, 50);
+  const minDurationMs = toInt(process.env.TRACE_MIN_DURATION_MS || 0, 0);
+  const statusFilterRaw = String(process.env.TRACE_STATUS || '').trim();
+  const statusFilter = statusFilterRaw ? statusFilterRaw.toUpperCase() : '';
   const timeoutMs = toInt(process.env.TRACE_REQUEST_TIMEOUT_MS || 7000, 7000);
   const jaegerBase = String(process.env.JAEGER_BASE_URL || 'http://localhost:16686').trim().replace(/\/+$/, '');
 
   const query = new URLSearchParams({ service, operation, limit: String(limit), lookback });
   const requestUrl = `${jaegerBase}/api/traces?${query.toString()}`;
 
-  console.log(`[TraceLatest] service=${service} operation=${operation} lookback=${lookback} limit=${limit}`);
+  console.log(
+    `[TraceLatest] service=${service} operation=${operation} lookback=${lookback} limit=${limit} status=${statusFilter || 'ANY'} min_duration_ms=${minDurationMs}`
+  );
 
   let payload;
   try {
@@ -128,6 +145,8 @@ function printTrace(trace, span, processMap) {
     for (const span of spans) {
       if (span.operationName !== operation) continue;
       if (hasManualEvent(span)) continue;
+      if (!matchesStatus(span, statusFilter)) continue;
+      if (!matchesMinDuration(span, minDurationMs)) continue;
       runtimeResults.push({ trace: traceEntry, span, processMap });
     }
   }

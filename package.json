@@ -15,6 +15,9 @@
     "trace:stack:stop": "npm run trace:collector:stop && npm run trace:jaeger:stop",
     "trace:check": "node scripts/check-tracing.js",
     "trace:latest": "node scripts/trace-latest.js",
+    "trace:latest:errors": "TRACE_STATUS=ERROR node scripts/trace-latest.js",
+    "trace:incident": "TRACE_STATUS=ERROR TRACE_MIN_DURATION_MS=500 TRACE_LOOKBACK=24h node scripts/trace-latest.js",
+    "trace:triage": "npm run trace:latest && npm run trace:latest:errors && npm run trace:incident",
     "install:edge": "npx playwright install msedge",
     "check": "node --check cli-agent.js && node --check edge-session.js && node --check nl-command-parser.js && node --check playwright-edge-mcp.js && node --check scripts/mcp-init-page.js",
     "test": "npm run check"

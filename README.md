@@ -1,91 +1,79 @@
 # Agent Live Web (VS Code Default)
 
-This repository is now configured for VS Code Copilot MCP as the default and primary mode.
-
-## Setup
+## Quickstart
 ```bash
 cd /workspaces/agent-live-web
 npm install
 npm run install:edge
+npm run check
 ```
 
-## Default run mode (VS Code)
-1. Open this workspace in VS Code.
-2. Restart MCP server `playwright-edge` from the MCP panel.
-
-The server config in `.vscode/mcp.json` is already pinned to VS Code owner:
-- `PLAYWRIGHT_MCP_OWNER=vscode`
-- persistent local Edge profile enabled
-- no external CDP endpoint required
-
-## Optional terminal start
+## Run
+- VS Code MCP: restart server `playwright-edge` from the MCP panel.
+- Terminal mode:
 ```bash
-cd /workspaces/agent-live-web
 npm run mcp:edge
 ```
 
-This command auto-claims `vscode` owner and uses persistent profile mode by default.
+Server config in `.vscode/mcp.json` is pinned to `PLAYWRIGHT_MCP_OWNER=vscode` with persistent local profile and no external CDP endpoint.
 
-## Tracing (VS Code Copilot MCP only)
-Tracing is enabled for the VS Code MCP server (`playwright-edge`) via `.vscode/mcp.json`.
+## What this is for (simple)
+- This project controls Edge browser tasks through MCP.
+- Tracing helps you see if the app is healthy, slow, or failing.
+- This is used for both daily debugging and issue investigation (not only testing).
 
-- Scope: MCP launcher + browser session runtime in this workspace
-- Excluded: `/workspaces/agent-live-web/agent` (untouched)
-- Default OTLP endpoint: `http://localhost:4318/v1/traces`
-
-If needed, change tracing env values under `.vscode/mcp.json`:
-- `EDGE_TRACING_ENABLED`
-- `EDGE_TRACING_SERVICE_NAME`
-- `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`
-
-Quick health check before MCP start:
+If you are not sure what to run, use this:
 ```bash
-npm run trace:check
+npm run trace:triage
 ```
+It runs the main checks and shows recent status.
 
-Start local collector (required if `trace:check` fails on localhost):
-```bash
-npm run trace:collector:start
-npm run trace:check
-```
+## Tracing
+- OTLP endpoint: `http://localhost:4318/v1/traces`
+- Jaeger UI: `http://localhost:16686`
+- Scope: MCP launcher + browser session runtime
+- Excluded: `/workspaces/agent-live-web/agent`
 
-Start full tracing stack with Jaeger UI:
+First-time flow:
 ```bash
 npm run trace:stack:start
+npm run trace:check
+npm run trace:triage
 ```
 
-Jaeger UI:
-- `http://localhost:16686`
-- Service name examples: `agent-live-web-vscode-mcp`, `agent-live-web-cli`
-
-Stop local collector:
+Core commands:
 ```bash
-npm run trace:collector:stop
-```
+# health
+npm run trace:check
 
-Stop full tracing stack:
-```bash
+# start / stop full stack (collector + Jaeger)
+npm run trace:stack:start
 npm run trace:stack:stop
-```
 
-Show latest runtime MCP traces (excludes manual smoke events):
-```bash
+# queries
 npm run trace:latest
+npm run trace:latest:errors
+npm run trace:incident
+npm run trace:triage
 ```
 
-## Privacy defaults
-- CLI file logging is disabled by default.
-- CLI console telemetry logging is disabled by default.
-- Local operator mode is enabled by default, and normal Playwright actions now auto-fallback to DOM strategy on failure.
-- Download/screenshot/trace outputs are restricted to your workspace by default.
-- To enable logs intentionally:
+Advanced filters:
+```bash
+TRACE_MIN_DURATION_MS=2000 npm run trace:latest
+TRACE_LOOKBACK=24h TRACE_STATUS=ERROR npm run trace:latest
+```
+
+## Privacy
+- Defaults: file logging off, console telemetry logging off, operator mode on, workspace-restricted outputs.
+
+Enable logs intentionally:
 ```bash
 export EDGE_LOG_TO_CONSOLE=true
 export EDGE_WRITE_LOG_FILE=true
 npm run agent:live-web
 ```
 
-Optional overrides (only if you explicitly need them):
+Optional overrides:
 ```bash
 export EDGE_DOM_FALLBACK_ON_FAILURE=false
 export EDGE_ALLOW_DOM_HTML_ADD=true
