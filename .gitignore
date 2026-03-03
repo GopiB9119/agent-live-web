@@ -4,6 +4,10 @@ node_modules/
 # Playwright browser profile + MCP runtime artifacts
 .playwright-edge-profile/
 .playwright-mcp/
+C:\\Users\\banot\\AppData\\Local\\PlaywrightMCP\\*
+C:\\Users\\banot\\AppData\\Local\\PlaywrightMCP\\active-owner.txt
+C:\\Users\\banot\\AppData\\Local\\PlaywrightMCP\\edge-profile/**
+C:\\Users\\banot\\AppData\\Local\\PlaywrightMCP\\output/**
 
 # Logs
 logs/
