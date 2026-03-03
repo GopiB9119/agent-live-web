@@ -285,6 +285,116 @@ For tasks like “play a song,” infer expected flow safely:
 
 Never fabricate browser outcomes.
 
+## Per-website deep test protocol (mandatory)
+When user asks to test company websites or live web reliability:
+
+### T0: Scope policy
+- Test one website at a time.
+- Do not skip to the next site until markdown report for current site is written.
+- Use at least one top-company website first when requested.
+
+### T1: 10-minute feature sweep (structured)
+Run a timed/structured sweep covering these capability families:
+1. Open and verify URL/title.
+2. Count core components (`buttons`, `links`, `inputs`, `forms`, headings, landmarks).
+3. Click primary controls (menu, nav, CTA, carousel if present).
+4. Scroll down/up and verify movement.
+5. Search/find flow (open search, type, submit, verify result state).
+6. Type/fill/remove in editable fields where safe.
+7. Open at least one internal/external link and return.
+8. Select/close interactions (menus, overlays, escape/back behavior).
+9. Loading/performance snapshot (DCL/load timing if available).
+10. Console/network error scan.
+
+### T2: Failure taxonomy (mandatory)
+Classify each issue with one primary type:
+- `selector-stability`
+- `visibility-state`
+- `timing-race`
+- `auth-gate`
+- `anti-bot/captcha`
+- `navigation-drift`
+- `cross-origin/popup`
+- `service-error` (4xx/5xx)
+- `agent-logic`
+
+For each failure include: symptom, root cause hypothesis, confidence (`low/med/high`), mitigation.
+
+### T3: Accuracy rules
+- Never claim 100% certainty on dynamic websites.
+- Report measured coverage and residual blind spots explicitly.
+- If hidden/virtualized DOM may exist, state that counts are viewport/runtime counts.
+
+### T4: Required per-site markdown output
+Write one markdown file per site test including:
+- metadata (site, timestamp, duration, final URL)
+- component inventory counts
+- action-by-action table (pass/fail + evidence)
+- failure list with taxonomy and fixes
+- performance and safety observations
+- next-step recommendations before moving to next site
+
+## Prompt hardening addendum (chatbot + dynamic UI)
+Use these mandatory controls for modern dynamic websites and chat widgets.
+
+### H1: UI state gates before every action
+Before clicking/typing, assert all are true:
+1. No blocking overlay/backdrop is active.
+2. No required onboarding modal is pending.
+3. Target element is visible, enabled, and in the active region.
+4. Current URL/title still matches expected task stage.
+
+If any check fails, run recovery first; do not proceed.
+
+### H2: Visible-only selector and scope rules
+- Prefer role/name locators scoped to active container (`main`, active dialog, active chat panel).
+- Never target hidden/off-canvas elements when a visible equivalent exists.
+- If locator matches multiple candidates, enforce visible filter and nearest semantic region.
+
+### H3: Chat interaction verification (2-phase)
+For each chat turn, require both signals:
+1. `send-confirmed`: user message appears in thread (or input clears + send event confirms).
+2. `response-confirmed`: a new assistant message is appended after that user message.
+
+Do not mark chat step as pass if only one signal exists.
+
+### H4: Latest-response extraction rule
+- Read only from the latest assistant message node in the active chat thread.
+- Do not use broad page text scraping for chatbot evaluation.
+- If extraction seems stale, re-query message list and verify message index/timestamp progression.
+
+### H5: Recovery ladder for blocked interactions
+When action is blocked (overlay intercept, not visible, disabled state):
+1. Press `Escape` once.
+2. Click a safe neutral area outside modal/overlay.
+3. Close explicit close/minimize button if present.
+4. Re-verify H1 gates.
+5. Retry once with tighter locator scope.
+
+If still blocked, classify failure and continue with remaining safe tests.
+
+### H6: Console/network source filtering
+- Separate first-party site issues from extension/tooling noise.
+- Do not escalate extension-origin warnings as site defects.
+- Report first-party runtime errors and service/network failures with endpoint and status.
+
+### H7: Anti-drift completion guard
+Never declare step completion unless:
+- preconditions passed,
+- postcondition evidence captured,
+- and failure taxonomy recorded if any fallback was used.
+
+If evidence is mixed/ambiguous, report partial pass with confidence level.
+
+## Live progress reporting contract
+During website execution, report to user in short updates:
+- current step,
+- what was observed,
+- what will run next,
+- any blocker and recovery path.
+
+Never hide failed actions; include them in the final report.
+
 ## No dummy/demo data policy
 - Do not use placeholder, mock, or demo data unless the user explicitly asks for it.
 - Use real user-provided inputs, real project context, and real observed state.

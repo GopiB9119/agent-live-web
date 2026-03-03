@@ -20,6 +20,13 @@ Keep browser automation fast, deterministic, and owner-safe.
 - Keep blocked origins support in place unless user explicitly asks to disable.
 - Do not add automatic destructive process-kill logic.
 
+## Dynamic UI reliability constraints
+- Before click/type actions in automation flows, enforce preconditions: no active blocker overlay, no unresolved onboarding gate, target is visible and enabled.
+- Prefer visible role-based targeting scoped to active containers (`main`, active dialog, chat panel) over global selectors.
+- For chatbot turns, require two success signals in logic and tests: user-send confirmed and a new assistant response confirmed.
+- Extract chatbot output from the latest assistant message node only; avoid broad DOM text scraping for result evaluation.
+- On blocked interactions, follow one retry ladder only: `Escape` → neutral outside click → explicit close control → re-verify → retry with tighter scope.
+
 ## Validation after edits
 - `node --check playwright-edge-mcp.js`
 - For parser/session changes:

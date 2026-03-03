@@ -70,6 +70,34 @@ Use this order:
 
 Avoid text-only selectors as first choice on dynamic sites.
 
+## Dynamic web and chatbot reliability (required)
+Apply these controls for modern JS-heavy pages, overlays, and embedded chat widgets.
+
+1. **Pre-action UI gate**
+  - Before click/type, verify: no blocking overlay, no pending onboarding gate, target is visible+enabled, URL/title still matches expected stage.
+  - If any check fails, recover first; do not continue action.
+
+2. **Visible-only targeting**
+  - Scope locators to active region (`main`, active dialog, active chat panel).
+  - Prefer visible role/name matches over generic global selectors.
+
+3. **Chat two-phase verification**
+  - Mark a chat turn successful only when both occur:
+    - user send is confirmed (message appears or send state confirms), and
+    - a new assistant response appears after that message.
+
+4. **Latest-response extraction**
+  - Read only the latest assistant message node in the active thread.
+  - Do not use broad page text scraping to evaluate chatbot output.
+
+5. **Blocked-action recovery ladder**
+  - Use exactly this order: `Escape` → neutral click outside blocker → explicit close/minimize control → re-verify gate → retry once with tighter scope.
+  - If still blocked, classify blocker and continue safe remaining checks.
+
+6. **Diagnostics source filtering**
+  - Separate first-party site errors from extension/tooling noise.
+  - Report first-party runtime/network failures explicitly with endpoint/status.
+
 ## Adaptive Execution Modes
 - `normal`: understanding + strict verification.
 - `fast`: after understanding is confirmed, minimize tool calls and continue with stable selectors only.

@@ -22,6 +22,14 @@ Server config in `.vscode/mcp.json` is pinned to `PLAYWRIGHT_MCP_OWNER=vscode` w
 - Tracing helps you see if the app is healthy, slow, or failing.
 - This is used for both daily debugging and issue investigation (not only testing).
 
+## Reliability standards (web + chatbot)
+- Pre-action gate is required: verify no blocking overlay, no pending onboarding gate, and target is visible + enabled.
+- Use visible-only, scoped selectors in active regions (`main`, active dialog, active chat panel).
+- Chat turns require two-phase verification: user-send confirmed and new assistant response confirmed.
+- Extract chatbot output from the latest assistant message node only (avoid broad page text scraping).
+- Use blocked-action recovery ladder exactly once: `Escape` → neutral outside click → explicit close/minimize control → re-verify → retry with tighter scope.
+- Separate first-party runtime/network errors from extension/tooling noise in diagnostics.
+
 If you are not sure what to run, use this:
 ```bash
 npm run trace:triage
