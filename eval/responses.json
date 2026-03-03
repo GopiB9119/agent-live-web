@@ -4,134 +4,116 @@
     "name": "Latest launch trace health",
     "category": "reliability",
     "expectedExitCode": 0,
-    "actualExitCode": 0,
+    "actualExitCode": 1,
     "minRuntimeTraces": 1,
     "maxRuntimeTraces": null,
-    "ok": true,
+    "ok": false,
     "checks": {
-      "exitOk": true,
-      "minTraceOk": true,
+      "exitOk": false,
+      "minTraceOk": false,
       "maxTraceOk": true
     },
-    "durationMs": 479,
-    "runtimeTraceCount": 2,
-    "launchDurationsMs": [
-      0,
-      22.85,
-      33.08
-    ],
-    "startedAt": "2026-03-03T12:16:54.370Z",
-    "finishedAt": "2026-03-03T12:16:54.849Z",
+    "durationMs": 3,
+    "runtimeTraceCount": 0,
+    "launchDurationsMs": [],
+    "startedAt": "2026-03-03T13:04:40.948Z",
+    "finishedAt": "2026-03-03T13:04:40.951Z",
     "env": {},
-    "stdout": "\n> agent-works@1.0.0 trace:latest\n> node scripts/trace-latest.js\n\n[TraceLatest] service=agent-live-web-vscode-mcp operation=mcp.server.launch lookback=1h limit=50 status=ANY min_duration_ms=0\n[TraceLatest] runtime_traces=2\ntrace=a0243b2a424f14076d847f1ff7ae77b0\n  service=agent-live-web-vscode-mcp\n  operation=mcp.server.launch\n  status=OK\n  owner=vscode\n  duration_ms=22.85\n  start=2026-03-03T11:13:47.239Z\ntrace=27318eb8513da004c319d16ae9cb74f7\n  service=agent-live-web-vscode-mcp\n  operation=mcp.server.launch\n  status=OK\n  owner=vscode\n  duration_ms=33.08\n  start=2026-03-03T11:08:28.006Z\n",
-    "stderr": ""
+    "stdout": "",
+    "stderr": "spawn npm ENOENT"
   },
   {
     "id": "q2_errors_health",
     "name": "Error trace health",
     "category": "reliability",
     "expectedExitCode": 0,
-    "actualExitCode": 0,
+    "actualExitCode": 1,
     "minRuntimeTraces": 0,
     "maxRuntimeTraces": 0,
-    "ok": true,
+    "ok": false,
     "checks": {
-      "exitOk": true,
+      "exitOk": false,
       "minTraceOk": true,
       "maxTraceOk": true
     },
-    "durationMs": 532,
+    "durationMs": 4,
     "runtimeTraceCount": 0,
-    "launchDurationsMs": [
-      0
-    ],
-    "startedAt": "2026-03-03T12:16:54.850Z",
-    "finishedAt": "2026-03-03T12:16:55.382Z",
+    "launchDurationsMs": [],
+    "startedAt": "2026-03-03T13:04:40.952Z",
+    "finishedAt": "2026-03-03T13:04:40.956Z",
     "env": {},
-    "stdout": "\n> agent-works@1.0.0 trace:latest:errors\n> TRACE_STATUS=ERROR node scripts/trace-latest.js\n\n[TraceLatest] service=agent-live-web-vscode-mcp operation=mcp.server.launch lookback=1h limit=50 status=ERROR min_duration_ms=0\n[TraceLatest] No runtime traces found (manual smoke traces excluded).\n",
-    "stderr": ""
+    "stdout": "",
+    "stderr": "spawn npm ENOENT"
   },
   {
     "id": "q3_incident_health",
     "name": "Incident filter health",
     "category": "performance",
     "expectedExitCode": 0,
-    "actualExitCode": 0,
+    "actualExitCode": 1,
     "minRuntimeTraces": 0,
     "maxRuntimeTraces": 0,
-    "ok": true,
+    "ok": false,
     "checks": {
-      "exitOk": true,
+      "exitOk": false,
       "minTraceOk": true,
       "maxTraceOk": true
     },
-    "durationMs": 456,
+    "durationMs": 2,
     "runtimeTraceCount": 0,
-    "launchDurationsMs": [
-      500
-    ],
-    "startedAt": "2026-03-03T12:16:55.382Z",
-    "finishedAt": "2026-03-03T12:16:55.838Z",
+    "launchDurationsMs": [],
+    "startedAt": "2026-03-03T13:04:40.956Z",
+    "finishedAt": "2026-03-03T13:04:40.958Z",
     "env": {},
-    "stdout": "\n> agent-works@1.0.0 trace:incident\n> TRACE_STATUS=ERROR TRACE_MIN_DURATION_MS=500 TRACE_LOOKBACK=24h node scripts/trace-latest.js\n\n[TraceLatest] service=agent-live-web-vscode-mcp operation=mcp.server.launch lookback=24h limit=50 status=ERROR min_duration_ms=500\n[TraceLatest] No runtime traces found (manual smoke traces excluded).\n",
-    "stderr": ""
+    "stdout": "",
+    "stderr": "spawn npm ENOENT"
   },
   {
     "id": "q4_triage_consistency",
     "name": "Triage consistency check",
     "category": "reliability",
     "expectedExitCode": 0,
-    "actualExitCode": 0,
+    "actualExitCode": 1,
     "minRuntimeTraces": 0,
     "maxRuntimeTraces": null,
-    "ok": true,
+    "ok": false,
     "checks": {
-      "exitOk": true,
+      "exitOk": false,
       "minTraceOk": true,
       "maxTraceOk": true
     },
-    "durationMs": 2031,
-    "runtimeTraceCount": 2,
-    "launchDurationsMs": [
-      0,
-      22.85,
-      33.08,
-      0,
-      500
-    ],
-    "startedAt": "2026-03-03T12:16:55.839Z",
-    "finishedAt": "2026-03-03T12:16:57.870Z",
+    "durationMs": 2,
+    "runtimeTraceCount": 0,
+    "launchDurationsMs": [],
+    "startedAt": "2026-03-03T13:04:40.959Z",
+    "finishedAt": "2026-03-03T13:04:40.961Z",
     "env": {},
-    "stdout": "\n> agent-works@1.0.0 trace:triage\n> npm run trace:latest && npm run trace:latest:errors && npm run trace:incident\n\n\n> agent-works@1.0.0 trace:latest\n> node scripts/trace-latest.js\n\n[TraceLatest] service=agent-live-web-vscode-mcp operation=mcp.server.launch lookback=1h limit=50 status=ANY min_duration_ms=0\n[TraceLatest] runtime_traces=2\ntrace=a0243b2a424f14076d847f1ff7ae77b0\n  service=agent-live-web-vscode-mcp\n  operation=mcp.server.launch\n  status=OK\n  owner=vscode\n  duration_ms=22.85\n  start=2026-03-03T11:13:47.239Z\ntrace=27318eb8513da004c319d16ae9cb74f7\n  service=agent-live-web-vscode-mcp\n  operation=mcp.server.launch\n  status=OK\n  owner=vscode\n  duration_ms=33.08\n  start=2026-03-03T11:08:28.006Z\n\n> agent-works@1.0.0 trace:latest:errors\n> TRACE_STATUS=ERROR node scripts/trace-latest.js\n\n[TraceLatest] service=agent-live-web-vscode-mcp operation=mcp.server.launch lookback=1h limit=50 status=ERROR min_duration_ms=0\n[TraceLatest] No runtime traces found (manual smoke traces excluded).\n\n> agent-works@1.0.0 trace:incident\n> TRACE_STATUS=ERROR TRACE_MIN_DURATION_MS=500 TRACE_LOOKBACK=24h node scripts/trace-latest.js\n\n[TraceLatest] service=agent-live-web-vscode-mcp operation=mcp.server.launch lookback=24h limit=50 status=ERROR min_duration_ms=500\n[TraceLatest] No runtime traces found (manual smoke traces excluded).\n",
-    "stderr": ""
+    "stdout": "",
+    "stderr": "spawn npm ENOENT"
   },
   {
     "id": "q5_latest_strict_window",
     "name": "Latest trace strict window",
     "category": "performance",
     "expectedExitCode": 0,
-    "actualExitCode": 0,
+    "actualExitCode": 1,
     "minRuntimeTraces": 1,
     "maxRuntimeTraces": null,
-    "ok": true,
+    "ok": false,
     "checks": {
-      "exitOk": true,
-      "minTraceOk": true,
+      "exitOk": false,
+      "minTraceOk": false,
       "maxTraceOk": true
     },
-    "durationMs": 477,
-    "runtimeTraceCount": 2,
-    "launchDurationsMs": [
-      0,
-      22.85,
-      33.08
-    ],
-    "startedAt": "2026-03-03T12:16:57.871Z",
-    "finishedAt": "2026-03-03T12:16:58.348Z",
+    "durationMs": 2,
+    "runtimeTraceCount": 0,
+    "launchDurationsMs": [],
+    "startedAt": "2026-03-03T13:04:40.961Z",
+    "finishedAt": "2026-03-03T13:04:40.963Z",
     "env": {
       "TRACE_LOOKBACK": "10m"
     },
-    "stdout": "\n> agent-works@1.0.0 trace:latest\n> node scripts/trace-latest.js\n\n[TraceLatest] service=agent-live-web-vscode-mcp operation=mcp.server.launch lookback=10m limit=50 status=ANY min_duration_ms=0\n[TraceLatest] runtime_traces=2\ntrace=a0243b2a424f14076d847f1ff7ae77b0\n  service=agent-live-web-vscode-mcp\n  operation=mcp.server.launch\n  status=OK\n  owner=vscode\n  duration_ms=22.85\n  start=2026-03-03T11:13:47.239Z\ntrace=27318eb8513da004c319d16ae9cb74f7\n  service=agent-live-web-vscode-mcp\n  operation=mcp.server.launch\n  status=OK\n  owner=vscode\n  duration_ms=33.08\n  start=2026-03-03T11:08:28.006Z\n",
-    "stderr": ""
+    "stdout": "",
+    "stderr": "spawn npm ENOENT"
   }
 ]

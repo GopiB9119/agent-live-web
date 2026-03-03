@@ -1,35 +1,107 @@
 {
-  "totalRuns": 5,
-  "recentWindow": 5,
-  "averageScore": 97,
-  "scoreDeltaFromPrevious": 0,
-  "regressionDetected": false,
+  "totalRuns": 6,
+  "recentWindow": 6,
+  "averageScore": 87.5,
+  "scoreDeltaFromPrevious": -60,
+  "regressionDetected": true,
   "latest": {
-    "generatedAt": "2026-03-03T12:16:58.716Z",
+    "generatedAt": "2026-03-03T13:04:28.283Z",
     "summary": {
-      "overallScore": 100,
-      "reliabilityScore": 100,
+      "overallScore": 40,
+      "reliabilityScore": 0,
       "performanceScore": 100,
-      "commandSuccessRate": 100
+      "commandSuccessRate": 0
     },
     "metrics": {
       "totalChecks": 5,
-      "passedChecks": 5,
-      "failedChecks": 0,
+      "passedChecks": 0,
+      "failedChecks": 5,
       "errorTraceCount": 0,
       "incidentTraceCount": 0,
-      "launchTraceCount": 3,
-      "launchP95Ms": 33.08,
-      "launchMaxMs": 33.08
+      "launchTraceCount": 0,
+      "launchP95Ms": 0,
+      "launchMaxMs": 0
     },
-    "failedItems": [],
+    "failedItems": [
+      {
+        "id": "q1_latest_launch_health",
+        "name": "Latest launch trace health",
+        "expectedExitCode": 0,
+        "actualExitCode": 1,
+        "runtimeTraceCount": 0,
+        "minRuntimeTraces": 1,
+        "maxRuntimeTraces": null,
+        "checks": {
+          "exitOk": false,
+          "minTraceOk": false,
+          "maxTraceOk": true
+        }
+      },
+      {
+        "id": "q2_errors_health",
+        "name": "Error trace health",
+        "expectedExitCode": 0,
+        "actualExitCode": 1,
+        "runtimeTraceCount": 0,
+        "minRuntimeTraces": 0,
+        "maxRuntimeTraces": 0,
+        "checks": {
+          "exitOk": false,
+          "minTraceOk": true,
+          "maxTraceOk": true
+        }
+      },
+      {
+        "id": "q3_incident_health",
+        "name": "Incident filter health",
+        "expectedExitCode": 0,
+        "actualExitCode": 1,
+        "runtimeTraceCount": 0,
+        "minRuntimeTraces": 0,
+        "maxRuntimeTraces": 0,
+        "checks": {
+          "exitOk": false,
+          "minTraceOk": true,
+          "maxTraceOk": true
+        }
+      },
+      {
+        "id": "q4_triage_consistency",
+        "name": "Triage consistency check",
+        "expectedExitCode": 0,
+        "actualExitCode": 1,
+        "runtimeTraceCount": 0,
+        "minRuntimeTraces": 0,
+        "maxRuntimeTraces": null,
+        "checks": {
+          "exitOk": false,
+          "minTraceOk": true,
+          "maxTraceOk": true
+        }
+      },
+      {
+        "id": "q5_latest_strict_window",
+        "name": "Latest trace strict window",
+        "expectedExitCode": 0,
+        "actualExitCode": 1,
+        "runtimeTraceCount": 0,
+        "minRuntimeTraces": 1,
+        "maxRuntimeTraces": null,
+        "checks": {
+          "exitOk": false,
+          "minTraceOk": false,
+          "maxTraceOk": true
+        }
+      }
+    ],
     "status": {
-      "healthy": true,
-      "needsAttention": false,
-      "gateReady": true
+      "healthy": false,
+      "needsAttention": true,
+      "gateReady": false
     },
     "remediationHints": [
-      "No action needed. Continue monitoring with `npm run trace:triage`."
+      "No launch traces found: run `npm run trace:stack:start`, restart MCP server, then run `npm run trace:latest`.",
+      "One or more checks failed: open `eval/report.md`, fix the first failed check, then rerun `npm run eval:all`."
     ]
   },
   "previous": {

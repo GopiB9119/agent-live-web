@@ -193,6 +193,73 @@ For substantial tasks, return:
 - Use one meaningful action at a time with verification.
 - Avoid blind loops; switch strategy if repeated failure occurs.
 
+## Incident learning and prevention (mandatory)
+Use this as a hard checklist after any failed or messy run.
+
+### What went wrong in the Swiggy case (example)
+- I switched between restaurant pages and checkout without first enforcing one stable cart baseline.
+- I relied on stale element refs after navigation; selectors became invalid and actions drifted.
+- I did not enforce a strict budget gate (`<= user max`) before add/remove actions.
+- I changed flow strategy too late, causing unnecessary back-and-forth and lower user confidence.
+
+### Wrong-path patterns to block permanently
+- `Path drift`: navigating to a new page before finishing current page objective.
+- `State drift`: acting when cart/auth/location state is not re-verified.
+- `Selector drift`: retrying with old refs after DOM refresh.
+- `Constraint drift`: proceeding without checking hard constraints (budget, site, side-effect policy).
+
+### Never-again guardrails
+Before every web action, enforce:
+1. `State lock`: confirm URL + login + key object state (cart/items/address/modal).
+2. `Constraint lock`: confirm budget/site/goal/side-effect policy still valid.
+3. `Action lock`: one atomic action only.
+4. `Evidence lock`: verify exact success signal immediately.
+5. `Drift check`: if verification fails, stop and re-snapshot before next attempt.
+
+### Recovery protocol after first failure
+1. Freeze actions; summarize expected vs observed state.
+2. Re-snapshot page and reacquire selectors from current DOM only.
+3. Return to nearest safe checkpoint (example: cart baseline at zero or known item set).
+4. Re-run with shortest deterministic path.
+5. If second strategy fails, report blocker and ask one focused decision question.
+
+## Universal task framework (local + live web)
+Use this for future handling software jobs where users provide skills and constraints.
+
+### A) Task classification
+- `live-web`: browser-based actions (auth, navigation, forms, carts, dashboards).
+- `local-workspace`: files, code, scripts, build, test, diagnostics.
+- `hybrid`: local preparation + live execution + local reporting.
+
+### B) Skill-based router
+Route by goal + surface + risk:
+- Web operation -> Playwright flow with understanding-first + strict verification.
+- Code/file operation -> read/search/edit/test flow with minimal safe diffs.
+- Structured JSON workflow -> schema validate first, then execute `steps` atomically.
+
+### C) Shared execution contract
+1. Understand (intent, constraints, success criteria).
+2. Baseline state capture (current URL/project state).
+3. Plan shortest safe path.
+4. Execute one atomic step.
+5. Verify against explicit signal.
+6. Check drift and constraints.
+7. Continue or recover.
+
+### D) Risk tiers
+- `low`: read-only or reversible action.
+- `medium`: state-changing but recoverable action.
+- `high`: irreversible/external side effect (`send/submit/delete/purchase/merge/push`).
+
+For `high` risk, always draft/preview first and require explicit same-run confirmation.
+
+### E) Completion criteria
+Task is complete only if:
+- all required constraints are satisfied,
+- evidence is captured for key steps,
+- unresolved blockers are declared,
+- handoff includes exact next action.
+
 ## Browser-depth protocol (Playwright-first, robust fallback)
 For browser tasks (example: play a song, navigate apps, submit forms):
 1. Preflight: confirm active tab, URL, auth state, and page readiness.

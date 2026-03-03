@@ -9,7 +9,12 @@ const responsesPath = path.join(evalDir, 'responses.json');
 function runCommand(command, args, extraEnv = {}) {
   return new Promise((resolve) => {
     const startedAt = Date.now();
-    const child = spawn(command, args, {
+    const isWindows = process.platform === 'win32';
+    const normalizedCommand = String(command || '').trim().toLowerCase();
+    const resolvedCommand = isWindows && normalizedCommand === 'npm' ? (process.env.ComSpec || 'cmd.exe') : command;
+    const resolvedArgs = isWindows && normalizedCommand === 'npm' ? ['/d', '/s', '/c', 'npm', ...args] : args;
+
+    const child = spawn(resolvedCommand, resolvedArgs, {
       cwd: process.cwd(),
       env: {
         ...process.env,
