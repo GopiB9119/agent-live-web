@@ -1,0 +1,47 @@
+name: eval-gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax checks
+        run: npm run check
+
+      - name: Run evaluation CI gate
+        run: npm run eval:ci
+        env:
+          EVAL_GATE_MIN_SCORE: '85'
+          EVAL_GATE_ALLOW_REGRESSION: 'false'
+          EVAL_FLAKE_RUNS: '3'
+          EVAL_FLAKE_ALLOWED_SPREAD: '5'
+
+      - name: Upload evaluation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-artifacts
+          path: |
+            eval/report.json
+            eval/report.md
+            eval/history.jsonl
+            eval/trend.json
+            eval/flake-report.json
+            eval/flake-report.md

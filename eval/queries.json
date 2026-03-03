@@ -1,0 +1,64 @@
+[
+  {
+    "id": "q1_latest_launch_health",
+    "name": "Latest launch trace health",
+    "command": "npm",
+    "args": [
+      "run",
+      "trace:latest"
+    ],
+    "expectedExitCode": 0,
+    "minRuntimeTraces": 1,
+    "category": "reliability"
+  },
+  {
+    "id": "q2_errors_health",
+    "name": "Error trace health",
+    "command": "npm",
+    "args": [
+      "run",
+      "trace:latest:errors"
+    ],
+    "expectedExitCode": 0,
+    "maxRuntimeTraces": 0,
+    "category": "reliability"
+  },
+  {
+    "id": "q3_incident_health",
+    "name": "Incident filter health",
+    "command": "npm",
+    "args": [
+      "run",
+      "trace:incident"
+    ],
+    "expectedExitCode": 0,
+    "maxRuntimeTraces": 0,
+    "category": "performance"
+  },
+  {
+    "id": "q4_triage_consistency",
+    "name": "Triage consistency check",
+    "command": "npm",
+    "args": [
+      "run",
+      "trace:triage"
+    ],
+    "expectedExitCode": 0,
+    "category": "reliability"
+  },
+  {
+    "id": "q5_latest_strict_window",
+    "name": "Latest trace strict window",
+    "command": "npm",
+    "args": [
+      "run",
+      "trace:latest"
+    ],
+    "env": {
+      "TRACE_LOOKBACK": "10m"
+    },
+    "expectedExitCode": 0,
+    "minRuntimeTraces": 1,
+    "category": "performance"
+  }
+]

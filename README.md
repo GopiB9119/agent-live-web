@@ -84,3 +84,75 @@ export EDGE_RESTRICT_WRITE_TO_WORKSPACE=false
 ```bash
 npm run check
 ```
+
+## Evaluation (Local)
+Run local evaluation for reliability + performance:
+
+```bash
+# optional but recommended before collection
+npm run trace:stack:start
+
+# generate dataset, collect real command responses, score report
+npm run eval:all
+```
+
+Stress profile (stricter, more checks):
+
+```bash
+npm run eval:all:stress
+```
+
+Which one to use:
+- `eval:all` → normal daily health check
+- `eval:all:stress` → deeper confidence check before release/change
+
+Advanced phases (run one by one):
+
+```bash
+# 1) CI gate + trend history
+npm run eval:all:stress
+npm run eval:gate
+
+# 2) Flake control (runs multiple times, fails if unstable)
+npm run eval:flake
+
+# 3) Failure injection (intentionally creates a failing scenario)
+npm run eval:all:failure
+
+# 4) Full CI pipeline in one command
+npm run eval:ci
+```
+
+What each advanced command does:
+- `eval:history` → appends current run to `eval/history.jsonl` and writes `eval/trend.json`
+- `eval:gate` → fails when score/failed checks/regressions violate threshold
+- `eval:flake` → repeats evaluation and fails on unstable variance
+- `eval:all:failure` → verifies the gate can catch real failures
+
+Gate strictness presets:
+
+```bash
+# lenient
+npm run eval:gate:lenient
+
+# normal (recommended default)
+npm run eval:gate:normal
+
+# strict (release-level)
+npm run eval:gate:strict
+```
+
+Recommended flow by situation:
+- Daily: `npm run eval:all` then `npm run eval:gate:normal`
+- Before release: `npm run eval:ci:strict`
+- Debugging noisy env: `npm run eval:gate:lenient`
+
+Outputs:
+- `eval/queries.json`
+- `eval/responses.json`
+- `eval/report.json`
+- `eval/report.md`
+- `eval/history.jsonl`
+- `eval/trend.json`
+- `eval/flake-report.json`
+- `eval/flake-report.md`

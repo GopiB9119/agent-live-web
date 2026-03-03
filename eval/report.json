@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-03-03T12:16:58.716Z",
+  "summary": {
+    "overallScore": 100,
+    "reliabilityScore": 100,
+    "performanceScore": 100,
+    "commandSuccessRate": 100
+  },
+  "metrics": {
+    "totalChecks": 5,
+    "passedChecks": 5,
+    "failedChecks": 0,
+    "errorTraceCount": 0,
+    "incidentTraceCount": 0,
+    "launchTraceCount": 3,
+    "launchP95Ms": 33.08,
+    "launchMaxMs": 33.08
+  },
+  "failedItems": [],
+  "status": {
+    "healthy": true,
+    "needsAttention": false,
+    "gateReady": true
+  },
+  "remediationHints": [
+    "No action needed. Continue monitoring with `npm run trace:triage`."
+  ]
+}

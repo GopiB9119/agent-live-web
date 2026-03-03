@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-03-03T12:03:31.627Z",
+  "runs": 3,
+  "scores": [
+    100,
+    100,
+    100
+  ],
+  "medianScore": 100,
+  "minScore": 100,
+  "maxScore": 100,
+  "scoreSpread": 0,
+  "failedCheckRuns": 0,
+  "unstable": false,
+  "allowedSpread": 5
+}
