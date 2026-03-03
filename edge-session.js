@@ -1,6 +1,7 @@
 ﻿const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+const { runInSpan, getActiveTraceMeta } = require('./tracing');
 
 function toInt(value, fallback) {
   const parsed = Number(value);
@@ -124,47 +125,59 @@ class EdgeSession {
   }
 
   async open() {
-    await fs.promises.mkdir(this.userDataDir, { recursive: true });
-    if (this.writeLogFile) {
-      await fs.promises.mkdir(path.dirname(this.logFile), { recursive: true });
-    }
+    return runInSpan(
+      'edge.session.open',
+      {
+        'app.browser.channel': 'msedge',
+        'app.edge.headless': this.headless,
+        'app.edge.retry_count': this.retryCount
+      },
+      async () => {
+        await fs.promises.mkdir(this.userDataDir, { recursive: true });
+        if (this.writeLogFile) {
+          await fs.promises.mkdir(path.dirname(this.logFile), { recursive: true });
+        }
 
-    this.context = await chromium.launchPersistentContext(this.userDataDir, {
-      channel: 'msedge',
-      headless: this.headless,
-      viewport: null,
-      acceptDownloads: true,
-      args: [
-        '--no-default-browser-check',
-        '--disable-features=Translate'
-      ]
-    });
-    this.context.setDefaultTimeout(this.actionTimeout);
-    this.context.setDefaultNavigationTimeout(this.navigationTimeout);
+        this.context = await chromium.launchPersistentContext(this.userDataDir, {
+          channel: 'msedge',
+          headless: this.headless,
+          viewport: null,
+          acceptDownloads: true,
+          args: [
+            '--no-default-browser-check',
+            '--disable-features=Translate'
+          ]
+        });
+        this.context.setDefaultTimeout(this.actionTimeout);
+        this.context.setDefaultNavigationTimeout(this.navigationTimeout);
 
-    this.context.on('page', (page) => this.bindPage(page));
-    const existingPages = this.context.pages();
-    this.page = existingPages.length ? existingPages[0] : await this.context.newPage();
-    this.page.setDefaultTimeout(this.actionTimeout);
-    this.page.setDefaultNavigationTimeout(this.navigationTimeout);
-    this.bindPage(this.page);
+        this.context.on('page', (page) => this.bindPage(page));
+        const existingPages = this.context.pages();
+        this.page = existingPages.length ? existingPages[0] : await this.context.newPage();
+        this.page.setDefaultTimeout(this.actionTimeout);
+        this.page.setDefaultNavigationTimeout(this.navigationTimeout);
+        this.bindPage(this.page);
 
-    this.log('INFO', 'Edge session opened', {
-      userDataDir: this.userDataDir,
-      headless: this.headless,
-      actionTimeout: this.actionTimeout,
-      navigationTimeout: this.navigationTimeout,
-      retryCount: this.retryCount
-    });
-    return this.page;
+        this.log('INFO', 'Edge session opened', {
+          userDataDir: this.userDataDir,
+          headless: this.headless,
+          actionTimeout: this.actionTimeout,
+          navigationTimeout: this.navigationTimeout,
+          retryCount: this.retryCount
+        });
+        return this.page;
+      }
+    );
   }
 
   async close() {
-    if (!this.context) return;
-    await this.context.close();
-    this.context = null;
-    this.page = null;
-    this.log('INFO', 'Edge session closed');
+    return runInSpan('edge.session.close', {}, async () => {
+      if (!this.context) return;
+      await this.context.close();
+      this.context = null;
+      this.page = null;
+      this.log('INFO', 'Edge session closed');
+    });
   }
 
   async newSession() {
@@ -180,52 +193,61 @@ class EdgeSession {
     this.log('INFO', 'Action started', safeParams ? { action, params: safeParams } : { action });
 
     try {
-      const result = await this.withActionRetry(action, async () => {
-        switch (action) {
-          case 'goto':
-            if (!params.url) throw new Error('Missing url');
-            return this.handleGoto(params);
-          case 'search':
-            return this.handleSearch(params);
-          case 'click':
-          case 'clickXPath':
-          case 'clickByText':
-            return this.handleClick(action, params);
-          case 'edit':
-            return this.handleFill(params);
-          case 'type':
-            return this.handleType(params);
-          case 'delete':
-            return this.handleDelete(params);
-          case 'add':
-            if (!this.allowDomHtmlAdd) {
-              throw new Error('add action is disabled by security policy (EDGE_ALLOW_DOM_HTML_ADD=false)');
+      const result = await runInSpan(
+        'edge.action.execute',
+        {
+          'app.action.name': action,
+          'app.action.retry_count': this.retryCount,
+          'app.action.dom_fallback_enabled': this.domFallbackOnFailure
+        },
+        async () =>
+          this.withActionRetry(action, async () => {
+            switch (action) {
+              case 'goto':
+                if (!params.url) throw new Error('Missing url');
+                return this.handleGoto(params);
+              case 'search':
+                return this.handleSearch(params);
+              case 'click':
+              case 'clickXPath':
+              case 'clickByText':
+                return this.handleClick(action, params);
+              case 'edit':
+                return this.handleFill(params);
+              case 'type':
+                return this.handleType(params);
+              case 'delete':
+                return this.handleDelete(params);
+              case 'add':
+                if (!this.allowDomHtmlAdd) {
+                  throw new Error('add action is disabled by security policy (EDGE_ALLOW_DOM_HTML_ADD=false)');
+                }
+                return this.handleAdd(params);
+              case 'exists':
+                return this.handleExists(params);
+              case 'getText':
+                return this.handleGetText(params);
+              case 'waitFor':
+                return this.handleWaitFor(params);
+              case 'wait':
+                return this.handleWait(params);
+              case 'download':
+                return this.handleDownload(params);
+              case 'upload':
+                return this.handleUpload(params);
+              case 'scroll':
+                return this.handleScroll(params);
+              case 'screenshot':
+                return this.handleScreenshot(params);
+              case 'startTrace':
+                return this.handleStartTrace();
+              case 'stopTrace':
+                return this.handleStopTrace(params);
+              default:
+                throw new Error(`Unsupported action: ${action}`);
             }
-            return this.handleAdd(params);
-          case 'exists':
-            return this.handleExists(params);
-          case 'getText':
-            return this.handleGetText(params);
-          case 'waitFor':
-            return this.handleWaitFor(params);
-          case 'wait':
-            return this.handleWait(params);
-          case 'download':
-            return this.handleDownload(params);
-          case 'upload':
-            return this.handleUpload(params);
-          case 'scroll':
-            return this.handleScroll(params);
-          case 'screenshot':
-            return this.handleScreenshot(params);
-          case 'startTrace':
-            return this.handleStartTrace();
-          case 'stopTrace':
-            return this.handleStopTrace(params);
-          default:
-            throw new Error(`Unsupported action: ${action}`);
-        }
-      });
+          })
+      );
 
       const safeResult = this.logActionPayloads ? sanitizeForLog(result) : undefined;
       this.log(
@@ -972,7 +994,12 @@ class EdgeSession {
 
   log(level, message, metadata) {
     const timestamp = new Date().toISOString();
-    const suffix = metadata ? ` ${JSON.stringify(metadata)}` : '';
+    const traceMeta = getActiveTraceMeta();
+    const payload = {
+      ...(metadata || {}),
+      ...(traceMeta ? { trace: traceMeta } : {})
+    };
+    const suffix = Object.keys(payload).length ? ` ${JSON.stringify(payload)}` : '';
     const line = `[${timestamp}] [${level}] ${message}${suffix}`;
     if (this.logToConsole) {
       console.log(line);

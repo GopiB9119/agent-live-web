@@ -7,6 +7,14 @@
     "agent:live-web": "node cli-agent.js",
     "mcp:edge": "node scripts/set-mcp-owner.js vscode && node playwright-edge-mcp.js",
     "mcp:owner:vscode": "node scripts/set-mcp-owner.js vscode",
+    "trace:jaeger:start": "bash scripts/start-jaeger.sh",
+    "trace:jaeger:stop": "bash scripts/stop-jaeger.sh",
+    "trace:collector:start": "bash scripts/start-otel-collector.sh",
+    "trace:collector:stop": "bash scripts/stop-otel-collector.sh",
+    "trace:stack:start": "npm run trace:jaeger:start && npm run trace:collector:start",
+    "trace:stack:stop": "npm run trace:collector:stop && npm run trace:jaeger:stop",
+    "trace:check": "node scripts/check-tracing.js",
+    "trace:latest": "node scripts/trace-latest.js",
     "install:edge": "npx playwright install msedge",
     "check": "node --check cli-agent.js && node --check edge-session.js && node --check nl-command-parser.js && node --check playwright-edge-mcp.js && node --check scripts/mcp-init-page.js",
     "test": "npm run check"
@@ -15,6 +23,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.70.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.212.0",
+    "@opentelemetry/resources": "^2.5.1",
+    "@opentelemetry/sdk-node": "^0.212.0",
+    "@opentelemetry/semantic-conventions": "^1.40.0",
     "playwright": "^1.58.2"
   }
 }

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { initTracing, runInSpan, recordException, shutdownTracing } = require('./tracing');
 
 const defaultRuntimeRoot = process.env.LOCALAPPDATA
   ? path.join(process.env.LOCALAPPDATA, 'PlaywrightMCP')
@@ -29,6 +30,10 @@ const lockFilePath = path.join(userDataDir, '.mcp-owner-lock.json');
 
 const extraArgs = process.argv.slice(2);
 let child = null;
+
+initTracing('agent-live-web-vscode-mcp').catch(() => {
+  // best effort; never block MCP startup
+});
 
 function toBool(value, fallback) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -226,7 +231,26 @@ child = spawn(command, commandArgs, {
   shell: false
 });
 
+runInSpan(
+  'mcp.server.launch',
+  {
+    'app.mcp.owner': owner || 'unknown',
+    'app.mcp.profile_persistent': persistProfile,
+    'app.mcp.shared_context': sharedBrowserContext
+  },
+  async (span) => {
+    span.addEvent('mcp_child_spawned', { pid: child.pid || 0 });
+  }
+).catch(() => {
+  // best effort
+});
+
 child.on('error', (error) => {
+  runInSpan('mcp.server.error', {}, async (span) => {
+    recordException(span, error);
+  }).catch(() => {
+    // best effort
+  });
   releaseOwnerLock();
   console.error(`[MCP] Failed to start server: ${error.message}`);
   process.exit(1);
@@ -234,6 +258,9 @@ child.on('error', (error) => {
 
 child.on('exit', (code) => {
   releaseOwnerLock();
+  shutdownTracing().catch(() => {
+    // best effort
+  });
   process.exit(code === null ? 1 : code);
 });
 
@@ -247,4 +274,7 @@ process.on('SIGTERM', () => {
 
 process.on('exit', () => {
   releaseOwnerLock();
+  shutdownTracing().catch(() => {
+    // best effort
+  });
 });

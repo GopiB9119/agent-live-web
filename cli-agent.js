@@ -1,5 +1,6 @@
 ﻿const { EdgeSession } = require('./edge-session');
 const { parseCommand } = require('./nl-command-parser');
+const { initTracing, runInSpan, shutdownTracing } = require('./tracing');
 const readline = require('readline');
 
 const HELP_TEXT = `
@@ -29,6 +30,7 @@ Session commands:
 `.trim();
 
 (async () => {
+  await initTracing('agent-live-web-cli');
   const session = new EdgeSession();
   await session.open();
 
@@ -42,6 +44,7 @@ Session commands:
 
   async function shutdown() {
     await session.close();
+    await shutdownTracing();
     rl.close();
   }
 
@@ -73,7 +76,11 @@ Session commands:
     }
 
     try {
-      const result = await session.act(parsed.action, parsed.params);
+      const result = await runInSpan(
+        'cli.command.execute',
+        { 'app.command.action': parsed.action },
+        async () => session.act(parsed.action, parsed.params)
+      );
       if (result !== undefined) {
         console.log(`Result: ${JSON.stringify(result)}`);
       }
