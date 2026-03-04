@@ -23,6 +23,10 @@ logs/
 .env.*
 !.env.example
 
+# Local agent memory (keep private for public repos)
+memory/
+MEMORY.md
+
 # Temp/system files
 *.tmp
 *.temp

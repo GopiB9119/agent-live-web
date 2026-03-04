@@ -1,7 +1,7 @@
 {
   "name": "agent-works",
-  "version": "1.0.0",
-  "description": "",
+  "version": "5.1.0",
+  "description": "VS Code-first Playwright Edge MCP toolkit for reliable real-time web automation, tracing, and evaluation.",
   "main": "index.js",
   "scripts": {
     "agent:live-web": "node cli-agent.js",
@@ -40,9 +40,20 @@
     "check": "node --check cli-agent.js && node --check edge-session.js && node --check nl-command-parser.js && node --check playwright-edge-mcp.js && node --check scripts/mcp-init-page.js",
     "test": "npm run check"
   },
-  "keywords": [],
+  "keywords": [
+    "playwright",
+    "mcp",
+    "vscode",
+    "github-copilot",
+    "edge",
+    "browser-automation",
+    "web-automation",
+    "ai-agent",
+    "opentelemetry",
+    "tracing"
+  ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.70.1",
