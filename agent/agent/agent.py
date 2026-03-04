@@ -27,8 +27,30 @@ MODEL = os.environ.get("azure_deployment_name", "gpt-4o")
 MAX_ITERATIONS = int(os.environ.get("AGENT_MAX_ITERATIONS", "10"))
 MAX_HISTORY_MESSAGES = int(os.environ.get("AGENT_MAX_HISTORY_MESSAGES", "60"))
 TOOL_TIMEOUT_SEC = float(os.environ.get("AGENT_TOOL_TIMEOUT_SEC", "180"))
-MEMORY_AUTO_LOG = os.environ.get("AGENT_MEMORY_AUTO_LOG", "true").strip().lower() in {"1", "true", "yes", "on"}
+MEMORY_AUTO_LOG = os.environ.get("AGENT_MEMORY_AUTO_LOG", "false").strip().lower() in {"1", "true", "yes", "on"}
 MEMORY_PRIVATE_SESSION = os.environ.get("AGENT_PRIVATE_SESSION", "true").strip().lower() in {"1", "true", "yes", "on"}
+MAX_MEMORY_LOG_CHARS = int(os.environ.get("AGENT_MEMORY_LOG_MAX_CHARS", "4000"))
+SENSITIVE_MEMORY_PATTERNS = [
+    re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._\-]{12,}"),
+    re.compile(r"(?i)\b(api[_-]?key|token|secret|password|passwd|pwd|cookie|authorization)\s*[:=]\s*([^\s,;]+)"),
+    re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z\-_]{20,}\b"),
+]
+
+
+def _redact_for_memory(value: str) -> str:
+    text = str(value or "")
+    for pattern in SENSITIVE_MEMORY_PATTERNS:
+        if pattern.pattern.lower().startswith("(?i)\\b(api"):
+            text = pattern.sub(lambda m: f"{m.group(1)}=[REDACTED]", text)
+        elif pattern.pattern.lower().startswith("(?i)\\b(bearer"):
+            text = pattern.sub("Bearer [REDACTED]", text)
+        else:
+            text = pattern.sub("[REDACTED]", text)
+    if len(text) > MAX_MEMORY_LOG_CHARS:
+        text = text[:MAX_MEMORY_LOG_CHARS] + "\n...[TRUNCATED]"
+    return text
 
 
 def _load_system_prompt() -> str:
@@ -176,10 +198,13 @@ async def _memory_log_event(content: str, role: str, importance: int = 3, tags=N
     memory_log_fn = AVAILABLE_FUNCTIONS.get("memory_log")
     if not memory_log_fn:
         return
+    sanitized = _redact_for_memory(content).strip()
+    if not sanitized:
+        return
     try:
         await memory_log_fn(
             {
-                "content": content,
+                "content": sanitized,
                 "role": role,
                 "importance": int(importance),
                 "tags": tags or [],

@@ -33,3 +33,7 @@ MEMORY.md
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Python cache artifacts
+__pycache__/
+*.pyc

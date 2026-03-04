@@ -15,6 +15,8 @@ This project helps developers automate web workflows from VS Code with stronger 
 - Sensitive files (`.env`, local profiles, runtime outputs) are excluded from git.
 - Side-effect actions should require explicit user confirmation.
 - Governance/instruction files are protected by policy unless explicitly requested.
+- Python agent command execution uses restricted mode by default (`AGENT_RUN_COMMAND_SECURITY_MODE=restricted`).
+- Memory auto-log is off by default (`AGENT_MEMORY_AUTO_LOG=false`) and memory entries are redacted.
 
 ## Quickstart
 ```bash

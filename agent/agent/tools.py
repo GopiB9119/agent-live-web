@@ -9,6 +9,8 @@ import fnmatch
 import subprocess
 import shutil
 import time
+import socket
+import ipaddress
 import html as html_lib
 import urllib.request
 import urllib.error
@@ -53,6 +55,30 @@ MEMORY_DIR = WORKSPACE_ROOT / "memory"
 LONG_TERM_MEMORY_FILE = WORKSPACE_ROOT / "MEMORY.md"
 MEMORY_VECTOR_INDEX_FILE = MEMORY_DIR / ".vector_index.json"
 MEMORY_VECTOR_DIM = 192
+RUN_COMMAND_SECURITY_MODE_DEFAULT = os.environ.get("AGENT_RUN_COMMAND_SECURITY_MODE", "restricted").strip().lower() or "restricted"
+RUN_COMMAND_ALLOW_DANGEROUS_ENV = "AGENT_ALLOW_DANGEROUS_COMMANDS"
+WEB_FETCH_ALLOW_PRIVATE_ENV = "AGENT_WEB_FETCH_ALLOW_PRIVATE_HOSTS"
+MAX_MEMORY_LOG_CHARS = 4000
+SENSITIVE_VALUE_PATTERNS = [
+    re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._\-]{12,}"),
+    re.compile(r"(?i)\b(api[_-]?key|token|secret|password|passwd|pwd|cookie|authorization)\s*[:=]\s*([^\s,;]+)"),
+    re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z\-_]{20,}\b"),
+]
+SAFE_COMMAND_PATTERNS = [
+    re.compile(r"^\s*git\s+(status|log|diff|show|branch|rev-parse|ls-files)\b", re.IGNORECASE),
+    re.compile(r"^\s*npm\s+(test|run\s+(check|test|test:unit|type-check))\b", re.IGNORECASE),
+    re.compile(r"^\s*node\s+--check\b", re.IGNORECASE),
+    re.compile(r"^\s*python\s+-m\s+py_compile\b", re.IGNORECASE),
+    re.compile(r"^\s*(get-childitem|get-content|select-string|ls|dir|pwd|echo|rg|findstr)\b", re.IGNORECASE),
+]
+LOCAL_HOSTNAMES = {
+    "localhost",
+    "localhost.localdomain",
+    "metadata.google.internal",
+    "host.docker.internal",
+}
 
 
 def _is_path_within_root(path_obj: Path, root_obj: Path) -> bool:
@@ -80,6 +106,84 @@ def _resolve_workspace_path(raw_path: str, must_exist: bool = False) -> Path:
         raise FileNotFoundError(f"Path does not exist: {candidate}")
 
     return candidate
+
+
+def _to_bool(value, default=False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _redact_sensitive_text(value: str, max_chars: int = MAX_MEMORY_LOG_CHARS) -> str:
+    text = str(value or "")
+    for pattern in SENSITIVE_VALUE_PATTERNS:
+        if pattern.pattern.lower().startswith("(?i)\\b(api"):
+            text = pattern.sub(lambda m: f"{m.group(1)}=[REDACTED]", text)
+        elif pattern.pattern.lower().startswith("(?i)\\b(bearer"):
+            text = pattern.sub("Bearer [REDACTED]", text)
+        else:
+            text = pattern.sub("[REDACTED]", text)
+    if len(text) > max_chars:
+        return text[:max_chars] + "\n...[TRUNCATED]"
+    return text
+
+
+def _run_command_is_safe_in_restricted_mode(command: str) -> bool:
+    trimmed = str(command or "").strip()
+    if not trimmed:
+        return False
+    if any(token in trimmed for token in ["&&", "||", ";", "|"]):
+        return False
+    return any(pattern.search(trimmed) for pattern in SAFE_COMMAND_PATTERNS)
+
+
+def _is_private_or_local_host(hostname: str) -> bool:
+    host = (hostname or "").strip().lower()
+    if not host:
+        return True
+    if host in LOCAL_HOSTNAMES or host.endswith(".local"):
+        return True
+
+    # Direct IP address input.
+    try:
+        ip_obj = ipaddress.ip_address(host)
+        return (
+            ip_obj.is_private
+            or ip_obj.is_loopback
+            or ip_obj.is_link_local
+            or ip_obj.is_multicast
+            or ip_obj.is_reserved
+            or ip_obj.is_unspecified
+        )
+    except ValueError:
+        pass
+
+    # DNS-resolved IP check for SSRF hardening.
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    except Exception:
+        return True
+
+    for item in infos:
+        try:
+            resolved_ip = item[4][0]
+            ip_obj = ipaddress.ip_address(resolved_ip)
+            if (
+                ip_obj.is_private
+                or ip_obj.is_loopback
+                or ip_obj.is_link_local
+                or ip_obj.is_multicast
+                or ip_obj.is_reserved
+                or ip_obj.is_unspecified
+            ):
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def _strip_html_to_text(raw_html: str) -> str:
@@ -821,6 +925,16 @@ AGENT_TOOLS = [
                     "command": {"type": "string", "description": "Shell command string."},
                     "cwd": {"type": "string", "description": "Relative working directory inside workspace.", "default": "."},
                     "timeout_sec": {"type": "number", "description": "Command timeout in seconds.", "default": 30},
+                    "security_mode": {
+                        "type": "string",
+                        "description": "Command policy mode: restricted (default) only allows safe read/check commands; permissive allows broader commands.",
+                        "default": "restricted",
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "description": "Explicit operator confirmation for dangerous command execution. Required with allow_dangerous=true.",
+                        "default": False,
+                    },
                     "allow_dangerous": {"type": "boolean", "description": "Set true to bypass command safety blocklist.", "default": False},
                 },
                 "required": ["command"],
@@ -839,6 +953,11 @@ AGENT_TOOLS = [
                     "max_chars": {"type": "number", "description": "Max characters for body/text.", "default": 50000},
                     "extract_text": {"type": "boolean", "description": "Return tag-stripped text summary.", "default": True},
                     "timeout_sec": {"type": "number", "description": "Network timeout in seconds.", "default": 20},
+                    "allow_private_hosts": {
+                        "type": "boolean",
+                        "description": "Allow localhost/private/link-local hosts (off by default for SSRF protection).",
+                        "default": False,
+                    },
                 },
                 "required": ["url"],
             },
@@ -2048,7 +2167,7 @@ async def reasoning_plan(kwargs_dict):
 
 async def memory_log(kwargs_dict):
     kwargs = kwargs_dict or {}
-    content = str(kwargs.get("content", "")).strip()
+    content = _redact_sensitive_text(str(kwargs.get("content", "")).strip())
     role = str(kwargs.get("role", "event")).strip() or "event"
     importance = int(kwargs.get("importance", 3))
     tags = kwargs.get("tags", [])
@@ -2075,7 +2194,7 @@ async def memory_log(kwargs_dict):
 
 async def memory_promote(kwargs_dict):
     kwargs = kwargs_dict or {}
-    fact = str(kwargs.get("fact", "")).strip()
+    fact = _redact_sensitive_text(str(kwargs.get("fact", "")).strip())
     importance = int(kwargs.get("importance", 7))
     tags = kwargs.get("tags", [])
     if not isinstance(tags, list):
@@ -2585,10 +2704,14 @@ async def run_command(kwargs_dict):
     command = str(kwargs.get("command", "")).strip()
     cwd_value = kwargs.get("cwd", ".")
     timeout_sec = float(kwargs.get("timeout_sec", 30))
+    security_mode = str(kwargs.get("security_mode", RUN_COMMAND_SECURITY_MODE_DEFAULT)).strip().lower() or RUN_COMMAND_SECURITY_MODE_DEFAULT
+    confirm = _to_bool(kwargs.get("confirm", False), False)
     allow_dangerous = bool(kwargs.get("allow_dangerous", False))
 
     if not command:
         return json.dumps({"status": "failed", "error": "command is required"}, ensure_ascii=True)
+    if security_mode not in {"restricted", "permissive"}:
+        return json.dumps({"status": "failed", "error": "security_mode must be 'restricted' or 'permissive'"}, ensure_ascii=True)
 
     blocked_patterns = [
         r"\brm\s+-rf\b",
@@ -2600,6 +2723,39 @@ async def run_command(kwargs_dict):
         r"remove-item\s+.+-recurse.+-force",
     ]
     lowered = command.lower()
+
+    if security_mode == "restricted" and not allow_dangerous:
+        if not _run_command_is_safe_in_restricted_mode(command):
+            return json.dumps(
+                {
+                    "status": "blocked",
+                    "error": "Command blocked by restricted security mode. Use a safe command pattern or switch to permissive mode explicitly.",
+                    "command": command,
+                    "security_mode": security_mode,
+                },
+                ensure_ascii=True,
+            )
+
+    if allow_dangerous:
+        if not confirm:
+            return json.dumps(
+                {
+                    "status": "blocked",
+                    "error": "allow_dangerous=true requires confirm=true in the same call.",
+                    "command": command,
+                },
+                ensure_ascii=True,
+            )
+        if not _to_bool(os.getenv(RUN_COMMAND_ALLOW_DANGEROUS_ENV, "0"), False):
+            return json.dumps(
+                {
+                    "status": "blocked",
+                    "error": f"allow_dangerous=true requires {RUN_COMMAND_ALLOW_DANGEROUS_ENV}=1 in environment.",
+                    "command": command,
+                },
+                ensure_ascii=True,
+            )
+
     if not allow_dangerous:
         for pattern in blocked_patterns:
             if re.search(pattern, lowered):
@@ -2628,6 +2784,7 @@ async def run_command(kwargs_dict):
             {
                 "status": "ok",
                 "command": command,
+                "security_mode": security_mode,
                 "cwd": cwd_path.relative_to(WORKSPACE_ROOT).as_posix() if cwd_path != WORKSPACE_ROOT else ".",
                 "exit_code": proc.returncode,
                 "stdout": proc.stdout[:20000],
@@ -2654,6 +2811,7 @@ async def web_fetch(kwargs_dict):
     url = str(kwargs.get("url", "")).strip()
     max_chars = int(kwargs.get("max_chars", 50000))
     extract_text = bool(kwargs.get("extract_text", True))
+    allow_private_hosts = _to_bool(kwargs.get("allow_private_hosts", False), False)
     timeout_sec = float(kwargs.get("timeout_sec", 20))
     max_chars = max(500, min(max_chars, 500000))
 
@@ -2661,6 +2819,24 @@ async def web_fetch(kwargs_dict):
         return json.dumps({"status": "failed", "error": "url is required"}, ensure_ascii=True)
     if not re.match(r"^https?://", url, flags=re.IGNORECASE):
         return json.dumps({"status": "failed", "error": "Only http/https URLs are supported."}, ensure_ascii=True)
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return json.dumps({"status": "failed", "error": "Invalid URL format.", "url": url}, ensure_ascii=True)
+
+    hostname = parsed.hostname or ""
+    private_fetch_allowed = allow_private_hosts or _to_bool(os.getenv(WEB_FETCH_ALLOW_PRIVATE_ENV, "0"), False)
+    if not private_fetch_allowed and _is_private_or_local_host(hostname):
+        return json.dumps(
+            {
+                "status": "blocked",
+                "error": "Blocked private/local host fetch by SSRF policy.",
+                "url": url,
+                "host": hostname,
+            },
+            ensure_ascii=True,
+        )
 
     try:
         req = urllib.request.Request(
@@ -2782,7 +2958,14 @@ async def init_mcp_client():
 
     # Configure the MCP server command to use the local Playwright Edge script
     project_root = Path(__file__).resolve().parents[2]
-    owner_file = project_root / ".playwright-mcp" / "active-owner.txt"
+    default_runtime_root = (
+        Path(os.environ["LOCALAPPDATA"]) / "PlaywrightMCP"
+        if os.environ.get("LOCALAPPDATA")
+        else project_root / ".playwright-mcp"
+    )
+    owner_file = Path(os.environ.get("PLAYWRIGHT_MCP_OWNER_FILE", str(project_root / ".playwright-mcp" / "active-owner.txt")))
+    user_data_dir = Path(os.environ.get("PLAYWRIGHT_MCP_USER_DATA_DIR", str(default_runtime_root / "edge-profile")))
+    output_dir = Path(os.environ.get("PLAYWRIGHT_MCP_OUTPUT_DIR", str(default_runtime_root / "output")))
     mcp_env = os.environ.copy()
     mcp_env.update(
         {
@@ -2799,8 +2982,8 @@ async def init_mcp_client():
             "PLAYWRIGHT_MCP_SHARED_BROWSER_CONTEXT": "true",
             "PLAYWRIGHT_MCP_BLOCK_SERVICE_WORKERS": "true",
             "PLAYWRIGHT_MCP_BLOCKED_ORIGINS": "http://127.0.0.1;http://localhost;http://[::1];https://127.0.0.1;https://localhost;https://[::1];http://169.254.169.254;http://169.254.170.2",
-            "PLAYWRIGHT_MCP_USER_DATA_DIR": r"C:\Users\banot\AppData\Local\PlaywrightMCP\edge-profile",
-            "PLAYWRIGHT_MCP_OUTPUT_DIR": r"C:\Users\banot\AppData\Local\PlaywrightMCP\output",
+            "PLAYWRIGHT_MCP_USER_DATA_DIR": str(user_data_dir),
+            "PLAYWRIGHT_MCP_OUTPUT_DIR": str(output_dir),
         }
     )
 
