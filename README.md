@@ -1,8 +1,6 @@
 # Agent Live Web
 
-VS Code-first Playwright Edge MCP toolkit for reliable real-time web automation, tracing, and evaluation.
-
-This project helps developers automate web workflows from VS Code with stronger reliability checks, safer defaults, and local-first runtime behavior.
+This application helps developers automate real-time website workflows in VS Code using Playwright Edge MCP with local-first security, tracing, and evaluation.
 
 ## Why This Helps Developers
 - Run browser tasks through a single MCP Edge owner flow (`vscode` by default).
