@@ -91,7 +91,13 @@ GitHub Actions runs this automatically for `agent/**` changes using:
 npm run trace:stack:start
 npm run trace:check
 npm run trace:triage
+npm run health:snapshot
+npm run health:snapshot:quiet
 ```
+
+`npm run health:snapshot` runs JS syntax checks plus Python agent unit tests and writes a timestamped report to `logs/health/`.
+Use `npm run health:snapshot:quiet` for CI-friendly minimal console output while preserving full report details.
+Report retention is automatic: by default the latest `20` reports are kept in `logs/health/`. Override with `HEALTH_SNAPSHOT_KEEP_LATEST`.
 
 Useful endpoints:
 - OTLP: `http://localhost:4318/v1/traces`
