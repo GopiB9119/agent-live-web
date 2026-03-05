@@ -26,6 +26,7 @@ logs/
 # Local agent memory (keep private for public repos)
 memory/
 MEMORY.md
+.agent-state/
 
 # Temp/system files
 *.tmp
