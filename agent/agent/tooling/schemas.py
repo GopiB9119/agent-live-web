@@ -1,5 +1,19 @@
+from typing import Any, TypedDict
+
+
+class ToolFunctionSchema(TypedDict):
+    name: str
+    description: str
+    parameters: dict[str, Any]
+
+
+class ToolSchema(TypedDict):
+    type: str
+    function: ToolFunctionSchema
+
+
 # Source of truth for agent tool schemas.
-AGENT_TOOLS = [
+AGENT_TOOLS: list[ToolSchema] = [
     {
         "type": "function",
         "function": {
@@ -638,6 +652,3 @@ AGENT_TOOLS = [
         },
     },
 ]
-
-
-

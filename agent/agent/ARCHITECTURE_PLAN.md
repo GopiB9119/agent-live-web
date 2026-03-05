@@ -66,8 +66,9 @@ agent/agent/
   - Added unit tests under `agent/agent/tests/` for `runtime_utils`, `workflow_tools`, and `diagnostics_tools` (13 tests, stdlib `unittest`).
   - Expanded unit coverage for `web_tools`, `memory_tools`, and `mcp_tools` with mocked/local-only tests (total suite now 25 tests).
   - Added CI workflow `.github/workflows/python-agent-tests.yml` to run Python agent tests on push/PR for `agent/**` changes.
+  - Started v5.2 live MCP integration coverage with opt-in tests in `agent/agent/tests/integration/test_mcp_live_integration.py`.
 - Next:
-  - Add a lightweight PR status checklist (health report + tests) and enforce it before release tagging.
+  - Add trace-attachment capture for failed live integration runs and wire a scheduled/nightly integration workflow.
 
 ## Engineering Rules
 - One tool = one clear responsibility.
