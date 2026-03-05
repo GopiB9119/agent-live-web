@@ -36,6 +36,8 @@
     "eval:ci:strict": "npm run eval:all:stress && npm run eval:gate:strict && npm run eval:flake",
     "playwright:edge:smoke": "node scripts/playwright-edge-smoke.js",
     "trace:playwright:smoke": "node scripts/trace-playwright-smoke.js",
+    "health:snapshot": "node scripts/health-snapshot.js",
+    "health:snapshot:quiet": "node scripts/health-snapshot.js --quiet",
     "install:edge": "npx playwright install msedge",
     "check": "node --check cli-agent.js && node --check edge-session.js && node --check nl-command-parser.js && node --check playwright-edge-mcp.js && node --check scripts/mcp-init-page.js",
     "agent:test:py": "python -m unittest discover -s agent/agent/tests -p \"test_*.py\" -v",
