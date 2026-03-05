@@ -2,14 +2,16 @@ name: python-agent-tests
 
 on:
   push:
-    paths:
-      - "agent/**"
-      - ".github/workflows/python-agent-tests.yml"
+    branches:
+      - main
   pull_request:
-    paths:
-      - "agent/**"
-      - ".github/workflows/python-agent-tests.yml"
+    branches:
+      - main
   workflow_dispatch:
+
+concurrency:
+  group: python-agent-tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-python-agent:

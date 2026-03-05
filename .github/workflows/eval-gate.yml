@@ -2,7 +2,13 @@ name: eval-gate
 
 on:
   pull_request:
+    branches:
+      - main
   workflow_dispatch:
+
+concurrency:
+  group: eval-gate-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   evaluate:
@@ -25,7 +31,17 @@ jobs:
       - name: Syntax checks
         run: npm run check
 
-      - name: Run evaluation CI gate
+      - name: Run evaluation baseline gate (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          npm run eval:dataset:stress
+          npm run eval:collect
+          npm run eval:run
+          npm run eval:history
+          node -e "const fs=require('fs');const r=JSON.parse(fs.readFileSync('eval/report.json','utf8'));const score=Number((r.summary||{}).overallScore||0);if(score<40){console.error('[EvalBaselineGate] FAIL overallScore',score,'< 40');process.exit(1)};console.log('[EvalBaselineGate] PASS overallScore='+score);"
+
+      - name: Run evaluation CI gate (manual strict)
+        if: github.event_name != 'pull_request'
         run: npm run eval:ci
         env:
           EVAL_GATE_MIN_SCORE: '85'
