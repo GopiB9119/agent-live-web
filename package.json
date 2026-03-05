@@ -38,6 +38,7 @@
     "trace:playwright:smoke": "node scripts/trace-playwright-smoke.js",
     "install:edge": "npx playwright install msedge",
     "check": "node --check cli-agent.js && node --check edge-session.js && node --check nl-command-parser.js && node --check playwright-edge-mcp.js && node --check scripts/mcp-init-page.js",
+    "agent:test:py": "python -m unittest discover -s agent/agent/tests -p \"test_*.py\" -v",
     "test": "npm run check"
   },
   "keywords": [

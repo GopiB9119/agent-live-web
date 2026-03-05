@@ -30,6 +30,62 @@ npm run check
 npm run mcp:edge
 ```
 
+## Python Agent Model Config
+The Python agent now supports provider/model switching without code edits.
+
+- OpenAI/Codex style:
+```bash
+AGENT_PROVIDER=openai
+OPENAI_API_KEY=...
+AGENT_MODEL=codex-5.3
+```
+
+- Azure style:
+```bash
+AGENT_PROVIDER=azure
+azure_key=...
+azure_endpoint_uri=...
+azure_deployment_name=...
+```
+
+Notes:
+- `AGENT_PROVIDER=auto` will prefer OpenAI when `OPENAI_API_KEY` is present, otherwise Azure.
+- You can use any future model name by changing only `AGENT_MODEL`.
+
+## OAuth Support (Python Agent Tools)
+For OAuth-protected APIs/sites, configure profile and fetch token through tools:
+
+1. `oauth_set_profile` with `profile_name`, `token_url`, `client_id`, `client_secret` (+ optional `scope`/`audience`)
+2. `oauth_get_token` with `profile_name`
+3. `web_fetch` with `oauth_profile`
+
+Example `web_fetch` auth fields:
+- `oauth_profile`: profile name to auto-resolve bearer token
+- `auth`: `{ "type": "oauth_profile", "profile_name": "...", "force_refresh": false }`
+- `bearer_token`: direct bearer token (if you do not want profile-based flow)
+
+## Maintainability Workflow (Python Agent)
+- Run `agent_health_report` after adding or changing tools.
+- In interactive Python chat, run `/doctor` to execute the same health report quickly.
+- Use `agent/agent/ARCHITECTURE_PLAN.md` as the refactor roadmap.
+- Keep tool schemas and callable registrations aligned (health report checks this automatically).
+
+### Python Agent Tests
+Run targeted unit tests for refactored Python agent modules:
+
+```bash
+python -m unittest discover -s agent/agent/tests -p "test_*.py" -v
+```
+
+or via npm script:
+
+```bash
+npm run agent:test:py
+```
+
+GitHub Actions runs this automatically for `agent/**` changes using:
+- `.github/workflows/python-agent-tests.yml`
+
 ## Tracing and Health
 ```bash
 npm run trace:stack:start
