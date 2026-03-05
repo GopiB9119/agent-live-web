@@ -1,0 +1,7 @@
+# Default owner for all files.
+* @GopiB9119
+
+# Required review ownership for sensitive automation/runtime paths.
+/.github/workflows/** @GopiB9119 @vamsib-298
+/agent/agent/** @GopiB9119 @vamsib-298
+/scripts/** @GopiB9119 @vamsib-298

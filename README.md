@@ -69,6 +69,7 @@ Example `web_fetch` auth fields:
 - In interactive Python chat, run `/doctor` to execute the same health report quickly.
 - Use `agent/agent/ARCHITECTURE_PLAN.md` as the refactor roadmap.
 - Keep tool schemas and callable registrations aligned (health report checks this automatically).
+- v5.2 MCP live integration roadmap: `docs/V5_2_MCP_INTEGRATION_PLAN.md`.
 
 ### Python Agent Tests
 Run targeted unit tests for refactored Python agent modules:
@@ -85,6 +86,14 @@ npm run agent:test:py
 
 GitHub Actions runs this automatically for `agent/**` changes using:
 - `.github/workflows/python-agent-tests.yml`
+
+Optional live MCP integration tests (opt-in):
+
+```bash
+npm run agent:test:py:integration
+```
+
+Set `RUN_MCP_LIVE_TESTS=1` before running integration tests to execute real MCP session checks.
 
 ## Tracing and Health
 ```bash
@@ -125,3 +134,5 @@ npm run eval:ci:strict
 - Global repo instructions: `.github/copilot-instructions.md`
 - Website skill: `.github/skills/web-works/SKILL.md`
 - Security policy: `SECURITY.md`
+- Release verification: `RELEASE_CHECKLIST.md`
+- Code ownership policy: `.github/CODEOWNERS`
