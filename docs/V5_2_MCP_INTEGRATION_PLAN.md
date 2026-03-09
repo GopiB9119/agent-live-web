@@ -23,7 +23,7 @@ Move beyond unit-only coverage and validate real MCP browser automation behavior
 - Guard live tests with `RUN_MCP_LIVE_TESTS=1` to avoid CI flakiness.
 
 ## Execution Plan
-1. Stabilize local live test runs on Windows + Edge profile ownership.
-2. Add trace artifact capture for integration failures.
-3. Introduce a scheduled/nightly workflow for live integration tests.
-4. Promote stable live checks into release readiness checklist.
+1. Stabilize local live test runs on Windows + Edge profile ownership. [Done]
+2. Add trace artifact capture for integration failures. [Done]
+3. Introduce a scheduled/nightly workflow for live integration tests. [Done]
+4. Promote stable live checks into release readiness checklist. [Done]

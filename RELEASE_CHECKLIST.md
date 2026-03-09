@@ -6,6 +6,11 @@ Use this checklist before publishing any new release tag.
 - Confirm PR checks passed:
   - `test-python-agent`
   - `evaluate`
+- Run the local baseline verification:
+  - `npm run verify`
+- Run live MCP integration before release (manual workflow):
+  - GitHub Actions -> `mcp-live-integration` -> `Run workflow`
+  - confirm run is green and artifacts are generated
 - Confirm branch protection is still strict:
   - required review count = `1`
   - code owner reviews = `true`

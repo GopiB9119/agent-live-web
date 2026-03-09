@@ -117,6 +117,111 @@ class FSManager:
             return False
         return True
 
+    def _rel_path(self, path_obj: Path) -> str:
+        return path_obj.relative_to(self.workspace_root).as_posix()
+
+    @staticmethod
+    def _text_hash(value: str) -> str:
+        return hashlib.sha1(value.encode("utf-8", errors="ignore")).hexdigest()
+
+    def _path_info(self, path_obj: Path):
+        exists = path_obj.exists()
+        info = {
+            "path": self._rel_path(path_obj),
+            "exists": exists,
+            "type": "missing",
+        }
+        if not exists:
+            return info
+        info["type"] = "dir" if path_obj.is_dir() else "file"
+        try:
+            info["size"] = path_obj.stat().st_size
+        except Exception:
+            info["size"] = None
+        return info
+
+    async def preview_fs_write(self, kwargs_dict):
+        kwargs = kwargs_dict or {}
+        path_value = kwargs.get("path")
+        content = str(kwargs.get("content", ""))
+        append = bool(kwargs.get("append", False))
+        encoding = kwargs.get("encoding", "utf-8")
+
+        try:
+            file_path = self.resolve_workspace_path(path_value, must_exist=False)
+            existing = self._path_info(file_path)
+            if file_path.exists() and not file_path.is_file():
+                return json.dumps({"status": "failed", "error": f"Not a file: {file_path}"}, ensure_ascii=True)
+
+            preview = {
+                "operation": "append" if append and file_path.exists() else ("overwrite" if file_path.exists() else "create"),
+                "target": existing,
+                "content_chars": len(content),
+                "new_content_hash": self._text_hash(content),
+                "encoding": encoding,
+            }
+            if file_path.exists() and file_path.is_file():
+                original = file_path.read_text(encoding=encoding, errors="replace")
+                preview["current_chars"] = len(original)
+                preview["current_hash"] = self._text_hash(original)
+            return json.dumps({"status": "ok", "preview": preview}, ensure_ascii=True)
+        except Exception as e:
+            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+
+    async def preview_fs_copy(self, kwargs_dict, move: bool = False):
+        kwargs = kwargs_dict or {}
+        source_value = kwargs.get("source")
+        destination_value = kwargs.get("destination")
+        overwrite = bool(kwargs.get("overwrite", False))
+
+        try:
+            source_path = self.resolve_workspace_path(source_value, must_exist=True)
+            destination_path = self.resolve_workspace_path(destination_value, must_exist=False)
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "preview": {
+                        "operation": "move" if move else "copy",
+                        "source": self._path_info(source_path),
+                        "destination": self._path_info(destination_path),
+                        "overwrite": overwrite,
+                        "same_path": source_path == destination_path,
+                    },
+                },
+                ensure_ascii=True,
+            )
+        except Exception as e:
+            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+
+    async def preview_fs_delete(self, kwargs_dict):
+        kwargs = kwargs_dict or {}
+        path_value = kwargs.get("path")
+        recursive = bool(kwargs.get("recursive", False))
+        missing_ok = bool(kwargs.get("missing_ok", False))
+
+        try:
+            target_path = self.resolve_workspace_path(path_value, must_exist=False)
+            preview = self._path_info(target_path)
+            if target_path.exists() and target_path.is_dir():
+                try:
+                    preview["entries"] = len(list(target_path.iterdir()))
+                except Exception:
+                    preview["entries"] = None
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "preview": {
+                        "operation": "delete",
+                        "target": preview,
+                        "recursive": recursive,
+                        "missing_ok": missing_ok,
+                    },
+                },
+                ensure_ascii=True,
+            )
+        except Exception as e:
+            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+
     async def fs_list(self, kwargs_dict=None):
         kwargs = kwargs_dict or {}
         path_value = kwargs.get("path", ".")

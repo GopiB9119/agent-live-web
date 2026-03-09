@@ -4,6 +4,17 @@ import re
 import subprocess
 
 
+BLOCKED_PATTERNS = [
+    r"\brm\s+-rf\b",
+    r"\bdel\s+/f\b",
+    r"\bformat\b",
+    r"\bshutdown\b",
+    r"\breboot\b",
+    r"git\s+reset\s+--hard",
+    r"remove-item\s+.+-recurse.+-force",
+]
+
+
 class CommandManager:
     """
     Workspace-scoped command execution with restricted/permissive safety controls.
@@ -25,6 +36,47 @@ class CommandManager:
         self.to_bool = to_bool_fn
         self.run_command_is_safe_in_restricted_mode = run_command_is_safe_in_restricted_mode_fn
 
+    def _resolve_cwd(self, cwd_value):
+        cwd_path = self.resolve_workspace_path(cwd_value, must_exist=True)
+        if not cwd_path.is_dir():
+            raise NotADirectoryError(f"cwd is not a directory: {cwd_path}")
+        return cwd_path
+
+    async def preview_command(self, kwargs_dict):
+        kwargs = kwargs_dict or {}
+        command = str(kwargs.get("command", "")).strip()
+        cwd_value = kwargs.get("cwd", ".")
+        security_mode = str(kwargs.get("security_mode", self.run_command_security_mode_default)).strip().lower() or self.run_command_security_mode_default
+        allow_dangerous = bool(kwargs.get("allow_dangerous", False))
+
+        if not command:
+            return json.dumps({"status": "failed", "error": "command is required"}, ensure_ascii=True)
+        if security_mode not in {"restricted", "permissive"}:
+            return json.dumps({"status": "failed", "error": "security_mode must be 'restricted' or 'permissive'"}, ensure_ascii=True)
+
+        try:
+            cwd_path = self._resolve_cwd(cwd_value)
+        except Exception as e:
+            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+
+        lowered = command.lower()
+        matching_blocks = [pattern for pattern in BLOCKED_PATTERNS if re.search(pattern, lowered)]
+        return json.dumps(
+            {
+                "status": "ok",
+                "preview": {
+                    "command": command,
+                    "cwd": cwd_path.relative_to(self.workspace_root).as_posix() if cwd_path != self.workspace_root else ".",
+                    "security_mode": security_mode,
+                    "allow_dangerous": allow_dangerous,
+                    "safe_in_restricted_mode": self.run_command_is_safe_in_restricted_mode(command),
+                    "matches_blocked_patterns": bool(matching_blocks),
+                    "blocked_patterns": matching_blocks,
+                },
+            },
+            ensure_ascii=True,
+        )
+
     async def run_command(self, kwargs_dict):
         kwargs = kwargs_dict or {}
         command = str(kwargs.get("command", "")).strip()
@@ -39,15 +91,6 @@ class CommandManager:
         if security_mode not in {"restricted", "permissive"}:
             return json.dumps({"status": "failed", "error": "security_mode must be 'restricted' or 'permissive'"}, ensure_ascii=True)
 
-        blocked_patterns = [
-            r"\brm\s+-rf\b",
-            r"\bdel\s+/f\b",
-            r"\bformat\b",
-            r"\bshutdown\b",
-            r"\breboot\b",
-            r"git\s+reset\s+--hard",
-            r"remove-item\s+.+-recurse.+-force",
-        ]
         lowered = command.lower()
 
         if security_mode == "restricted" and not allow_dangerous:
@@ -83,7 +126,7 @@ class CommandManager:
                 )
 
         if not allow_dangerous:
-            for pattern in blocked_patterns:
+            for pattern in BLOCKED_PATTERNS:
                 if re.search(pattern, lowered):
                     return json.dumps(
                         {
@@ -95,9 +138,7 @@ class CommandManager:
                     )
 
         try:
-            cwd_path = self.resolve_workspace_path(cwd_value, must_exist=True)
-            if not cwd_path.is_dir():
-                return json.dumps({"status": "failed", "error": f"cwd is not a directory: {cwd_path}"}, ensure_ascii=True)
+            cwd_path = self._resolve_cwd(cwd_value)
 
             proc = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", command],

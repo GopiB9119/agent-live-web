@@ -10,6 +10,15 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 
+def _read_timeout_seconds(env_name: str, default: float) -> float:
+    raw_value = str(os.environ.get(env_name, str(default))).strip()
+    try:
+        parsed = float(raw_value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
 class MCPManager:
     """
     MCP session lifecycle + browser ownership/retry discipline manager.
@@ -30,8 +39,50 @@ class MCPManager:
         self.retryable_tools = set(retryable_tools or [])
         self.state_change_tools = set(state_change_tools or [])
         self.ownership_skip_tools = set(ownership_skip_tools or {"browser_tabs", "browser_close", "browser_install"})
+        self.retry_wait_seconds = max(0.0, float(os.environ.get("AGENT_MCP_RETRY_WAIT_SEC", "0.8")))
+        self.connect_timeout_seconds = _read_timeout_seconds("AGENT_MCP_CONNECT_TIMEOUT_SEC", 60.0)
+        self.tool_timeout_seconds = _read_timeout_seconds("AGENT_MCP_TOOL_TIMEOUT_SEC", 45.0)
+        self.shutdown_timeout_seconds = _read_timeout_seconds("AGENT_MCP_SHUTDOWN_TIMEOUT_SEC", 15.0)
+        self.verify_with_snapshot = str(os.environ.get("AGENT_MCP_VERIFY_SNAPSHOT", "false")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self.proxy_status_tool_name = "agent_proxy_status"
         self.mcp_session = None
         self._mcp_exit_stack = None
+        self.last_connect_status = "not_attempted"
+        self.last_connect_error = ""
+        self.last_tool_count = 0
+        self.last_proxy_status = {}
+
+    @staticmethod
+    def _log_enabled() -> bool:
+        return str(os.environ.get("AGENT_MCP_QUIET", "")).strip().lower() not in {"1", "true", "yes", "on"}
+
+    @classmethod
+    def _log(cls, message: str):
+        if cls._log_enabled():
+            print(message)
+
+    def runtime_status(self):
+        connected = self.mcp_session is not None
+        status = self.last_connect_status
+        if connected:
+            status = "connected"
+        elif status == "connected":
+            status = "disconnected"
+        return {
+            "connected": connected,
+            "status": status,
+            "error": self.last_connect_error,
+            "tool_count": int(self.last_tool_count or 0),
+            "connect_timeout_sec": self.connect_timeout_seconds,
+            "tool_timeout_sec": self.tool_timeout_seconds,
+            "shutdown_timeout_sec": self.shutdown_timeout_seconds,
+            "proxy_status": dict(self.last_proxy_status or {}),
+        }
 
     @staticmethod
     def _serialize_call_result(result) -> str:
@@ -98,12 +149,14 @@ class MCPManager:
             result = await self.mcp_session.call_tool(tool_name, arguments=payload)
             is_error = bool(getattr(result, "isError", False))
             text = self._serialize_call_result(result)
+            structured = getattr(result, "structuredContent", None)
             return {
                 "ok": not is_error,
                 "tool": tool_name,
                 "args": payload,
                 "error": None if not is_error else text,
                 "text": text,
+                "structured": structured if isinstance(structured, dict) else None,
                 "result": result,
             }
         except Exception as e:
@@ -114,6 +167,20 @@ class MCPManager:
                 "error": str(e),
                 "text": "",
             }
+
+    async def _refresh_proxy_status(self):
+        if self.mcp_session is None:
+            self.last_proxy_status = {}
+            return {}
+
+        call = await self._call_mcp_tool_raw("agent_proxy_status", {})
+        structured = call.get("structured")
+        if call.get("ok") and isinstance(structured, dict):
+            self.last_proxy_status = dict(structured)
+            return dict(self.last_proxy_status)
+
+        self.last_proxy_status = {}
+        return {}
 
     async def _list_tabs_state(self):
         call = await self._call_mcp_tool_raw("browser_tabs", {"action": "list"})
@@ -191,7 +258,7 @@ class MCPManager:
             "index": current["index"] if current else None,
             "snapshot_hash": None,
         }
-        if include_snapshot:
+        if include_snapshot and self.verify_with_snapshot:
             snap = await self._call_mcp_tool_raw("browser_snapshot", {})
             if snap["ok"]:
                 state["snapshot_hash"] = hashlib.sha1(snap.get("text", "").encode("utf-8", errors="ignore")).hexdigest()
@@ -200,6 +267,15 @@ class MCPManager:
     async def _verify_step(self, tool_name: str, args: dict, before_state: dict, call_outcome: dict):
         if not call_outcome["ok"]:
             return {"ok": False, "reason": call_outcome.get("error", "Tool failed"), "details": {}}
+
+        if tool_name == self.proxy_status_tool_name:
+            structured = call_outcome.get("structured") if isinstance(call_outcome.get("structured"), dict) else {}
+            reason = str(
+                structured.get("summary")
+                or structured.get("trust_summary")
+                or "Direct MCP proxy status reported."
+            )
+            return {"ok": True, "reason": reason, "details": {"proxy_status": structured}}
 
         if tool_name == "browser_navigate":
             after = await self._capture_page_state(include_snapshot=False)
@@ -330,7 +406,8 @@ class MCPManager:
 
     async def init_mcp_client(self, agent_tools, available_functions, register_or_update_tool_schema_fn):
         if self.mcp_session is not None:
-            return
+            self.last_connect_status = "connected"
+            return self.runtime_status()
 
         if not callable(register_or_update_tool_schema_fn):
             raise TypeError("register_or_update_tool_schema_fn must be callable")
@@ -347,19 +424,30 @@ class MCPManager:
         mcp_env = os.environ.copy()
         mcp_env.update(
             {
-                "PLAYWRIGHT_MCP_OWNER": "python",
+                "PLAYWRIGHT_MCP_OWNER": os.environ.get("PLAYWRIGHT_MCP_OWNER", "python"),
                 "PLAYWRIGHT_MCP_OWNER_FILE": str(owner_file),
-                "PLAYWRIGHT_MCP_PERSIST_PROFILE": "true",
-                "PLAYWRIGHT_MCP_SAVE_SESSION": "false",
-                "PLAYWRIGHT_MCP_SAVE_TRACE": "false",
-                "PLAYWRIGHT_MCP_OUTPUT_MODE": "stdout",
-                "PLAYWRIGHT_MCP_SNAPSHOT_MODE": "incremental",
-                "PLAYWRIGHT_MCP_CONSOLE_LEVEL": "error",
-                "PLAYWRIGHT_MCP_TIMEOUT_ACTION_MS": "12000",
-                "PLAYWRIGHT_MCP_TIMEOUT_NAVIGATION_MS": "60000",
-                "PLAYWRIGHT_MCP_SHARED_BROWSER_CONTEXT": "true",
-                "PLAYWRIGHT_MCP_BLOCK_SERVICE_WORKERS": "true",
-                "PLAYWRIGHT_MCP_BLOCKED_ORIGINS": "http://127.0.0.1;http://localhost;http://[::1];https://127.0.0.1;https://localhost;https://[::1];http://169.254.169.254;http://169.254.170.2",
+                "PLAYWRIGHT_MCP_PERSIST_PROFILE": os.environ.get("PLAYWRIGHT_MCP_PERSIST_PROFILE", "true"),
+                "PLAYWRIGHT_MCP_SAVE_SESSION": os.environ.get("PLAYWRIGHT_MCP_SAVE_SESSION", "false"),
+                "PLAYWRIGHT_MCP_SAVE_TRACE": os.environ.get("PLAYWRIGHT_MCP_SAVE_TRACE", "false"),
+                "PLAYWRIGHT_MCP_OUTPUT_MODE": os.environ.get("PLAYWRIGHT_MCP_OUTPUT_MODE", "stdout"),
+                "PLAYWRIGHT_MCP_SNAPSHOT_MODE": os.environ.get("PLAYWRIGHT_MCP_SNAPSHOT_MODE", "incremental"),
+                "PLAYWRIGHT_MCP_CONSOLE_LEVEL": os.environ.get("PLAYWRIGHT_MCP_CONSOLE_LEVEL", "error"),
+                "PLAYWRIGHT_MCP_TIMEOUT_ACTION_MS": os.environ.get("PLAYWRIGHT_MCP_TIMEOUT_ACTION_MS", "8000"),
+                "PLAYWRIGHT_MCP_TIMEOUT_NAVIGATION_MS": os.environ.get("PLAYWRIGHT_MCP_TIMEOUT_NAVIGATION_MS", "35000"),
+                "PLAYWRIGHT_MCP_SHARED_BROWSER_CONTEXT": os.environ.get("PLAYWRIGHT_MCP_SHARED_BROWSER_CONTEXT", "true"),
+                "PLAYWRIGHT_MCP_BLOCK_SERVICE_WORKERS": os.environ.get("PLAYWRIGHT_MCP_BLOCK_SERVICE_WORKERS", "false"),
+                "PLAYWRIGHT_MCP_BLOCKED_ORIGINS": os.environ.get(
+                    "PLAYWRIGHT_MCP_BLOCKED_ORIGINS",
+                    "http://127.0.0.1;http://localhost;http://[::1];https://127.0.0.1;https://localhost;https://[::1];http://169.254.169.254;http://169.254.170.2",
+                ),
+                "PLAYWRIGHT_MCP_PROXY_INIT_TIMEOUT_MS": os.environ.get(
+                    "PLAYWRIGHT_MCP_PROXY_INIT_TIMEOUT_MS",
+                    str(int(self.connect_timeout_seconds * 1000)),
+                ),
+                "PLAYWRIGHT_MCP_PROXY_REQUEST_TIMEOUT_MS": os.environ.get(
+                    "PLAYWRIGHT_MCP_PROXY_REQUEST_TIMEOUT_MS",
+                    str(int(self.tool_timeout_seconds * 1000)),
+                ),
                 "PLAYWRIGHT_MCP_USER_DATA_DIR": str(user_data_dir),
                 "PLAYWRIGHT_MCP_OUTPUT_DIR": str(output_dir),
             }
@@ -370,7 +458,7 @@ class MCPManager:
             raise FileNotFoundError(f"MCP launcher not found: {mcp_launcher}")
 
         server_params = StdioServerParameters(command="node", args=[str(mcp_launcher)], env=mcp_env)
-        print("Connecting to MCP Playwright server...")
+        self._log("Connecting to MCP Playwright server...")
 
         try:
             self._mcp_exit_stack = AsyncExitStack()
@@ -379,7 +467,11 @@ class MCPManager:
             await self.mcp_session.initialize()
 
             mcp_tools = await self.mcp_session.list_tools()
-            print(f"Connected to MCP server! Found {len(mcp_tools.tools)} tools.")
+            self._log(f"Connected to MCP server! Found {len(mcp_tools.tools)} tools.")
+            self.last_connect_status = "connected"
+            self.last_connect_error = ""
+            self.last_tool_count = len(mcp_tools.tools)
+            await self._refresh_proxy_status()
 
             for tool in mcp_tools.tools:
                 properties = {}
@@ -397,7 +489,7 @@ class MCPManager:
 
                 async def execute_mcp_tool(kwargs_dict, current_tool=tool.name):
                     args = kwargs_dict or {}
-                    print(f"Executing MCP Tool --> {current_tool} with arguments: {args}")
+                    self._log(f"Executing MCP Tool --> {current_tool} with arguments: {args}")
 
                     if current_tool.startswith("browser_") and current_tool not in self.ownership_skip_tools:
                         ownership = await self._ensure_owned_working_tab(preserve_current_blank=(current_tool == "browser_navigate"))
@@ -420,7 +512,8 @@ class MCPManager:
                     if current_tool not in self.retryable_tools:
                         return self._format_step_response(current_tool, args, 1, first_verification, first, recovered=False)
 
-                    await self._call_mcp_tool_raw("browser_wait_for", {"time": 2})
+                    if self.retry_wait_seconds > 0:
+                        await self._call_mcp_tool_raw("browser_wait_for", {"time": self.retry_wait_seconds})
                     second_before = await self._capture_page_state(include_snapshot=current_tool in self.state_change_tools)
                     second = await self._call_mcp_tool_raw(current_tool, args)
                     second_verification = await self._verify_step(current_tool, args, second_before, second)
@@ -436,18 +529,19 @@ class MCPManager:
                 available_functions[tool.name] = execute_mcp_tool
 
             await self._ensure_owned_working_tab()
-            print("MCP tools successfully loaded into AGENT_TOOLS.")
+            self._log("MCP tools successfully loaded into AGENT_TOOLS.")
+            return self.runtime_status()
 
         except Exception as e:
-            print(f"Failed to connect to MCP server: {e}")
-            print("Agent will proceed without external MCP tools.")
-            if self._mcp_exit_stack is not None:
-                try:
-                    await self._mcp_exit_stack.aclose()
-                except Exception:
-                    pass
+            self.last_connect_status = "failed"
+            self.last_connect_error = str(e)
+            self.last_tool_count = 0
+            self.last_proxy_status = {}
+            self._log(f"Failed to connect to MCP server: {e}")
+            self._log("Agent will proceed without external MCP tools.")
             self._mcp_exit_stack = None
             self.mcp_session = None
+            return self.runtime_status()
 
     async def shutdown_mcp_client(self):
         if self._mcp_exit_stack is not None:
@@ -457,3 +551,6 @@ class MCPManager:
                 pass
         self._mcp_exit_stack = None
         self.mcp_session = None
+        self.last_proxy_status = {}
+        if self.last_connect_status == "connected":
+            self.last_connect_status = "disconnected"

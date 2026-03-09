@@ -11,13 +11,18 @@ These files refine behavior for matching files using `applyTo` frontmatter.
 ## Current files
 - `playwright-edge.instructions.md`
   - Scope: Edge MCP runtime JS/config files.
-  - Purpose: owner lock, protocol cleanliness, runtime reliability.
+  - Purpose: owner lock, protocol cleanliness, runtime reliability, Python-agent compatibility.
 - `python-agent.instructions.md`
   - Scope: `agent/agent/**/*.py` and `agent/agent/*.md`.
-  - Purpose: MCP lifecycle, memory guarantees, local workspace behavior.
+  - Purpose: MCP lifecycle, safety alignment, memory guarantees, local workspace behavior.
 - `web-task-json.instructions.md`
   - Scope: website task JSON files.
   - Purpose: schema compliance, step design, side-effect safety.
+
+## Product split
+- Python agent is the primary product surface.
+- VS Code MCP and Playwright Edge runtime are controlled tool surfaces.
+- Path-specific instructions should reinforce that split rather than blur it.
 
 ## Authoring checklist
 1. Add precise `applyTo` patterns.

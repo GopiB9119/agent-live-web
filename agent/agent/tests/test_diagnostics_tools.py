@@ -1,17 +1,16 @@
 import json
-import tempfile
 import unittest
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from diagnostics_tools import DiagnosticsManager
+from tests_support import create_repo_local_temp_dir, remove_tree
 
 
 class DiagnosticsManagerTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
+        self.root = create_repo_local_temp_dir(Path(__file__), "test-diagnostics-tools", "diagnostics-tools")
         (self.root / "agent" / "agent").mkdir(parents=True, exist_ok=True)
         (self.root / "agent" / "agent" / "agent.py").write_text("print('ok')\n", encoding="utf-8")
         (self.root / "agent" / "agent" / "tools.py").write_text("print('ok')\n", encoding="utf-8")
@@ -51,7 +50,7 @@ class DiagnosticsManagerTests(unittest.IsolatedAsyncioTestCase):
         )
 
     def tearDown(self):
-        self.tmp.cleanup()
+        remove_tree(self.root)
 
     async def test_tool_catalog_only_callable(self):
         raw = await self.manager.tool_catalog({"only_callable": True})

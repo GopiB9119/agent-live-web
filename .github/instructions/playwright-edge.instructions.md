@@ -5,7 +5,7 @@ applyTo: "playwright-edge-mcp.js,edge-session.js,cli-agent.js,nl-command-parser.
 # Playwright Edge Runtime Instructions
 
 ## Goal
-Keep browser automation fast, deterministic, and owner-safe.
+Keep the browser automation infrastructure fast, deterministic, owner-safe, and compatible with the Python-first product flow.
 
 ## Rules
 - Preserve owner lock behavior (`PLAYWRIGHT_MCP_OWNER`, owner file, lock file).
@@ -14,6 +14,8 @@ Keep browser automation fast, deterministic, and owner-safe.
 - Keep MCP stdout protocol clean; write diagnostics to stderr.
 - Prefer configurable env vars for timeouts and runtime toggles.
 - Keep defaults performance-oriented but stable.
+- Keep runtime behavior compatible with the shared safety and verification model used by the Python agent.
+- Avoid adding browser-only behavior that bypasses the main product control plane without explicit reason.
 
 ## Safety constraints
 - Avoid broad command-line relaxations that reduce security.

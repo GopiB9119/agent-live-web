@@ -1,11 +1,13 @@
 import json
+import os
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from mcp_tools import MCPManager
+from tests_support import create_repo_local_temp_dir, remove_tree
 
 
 class _FakeItem:
@@ -21,16 +23,16 @@ class _FakeResult:
 
 class MCPManagerTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp_path = create_repo_local_temp_dir(Path(__file__), "test-mcp-tools", "mcp-tools")
         self.manager = MCPManager(
-            workspace_root=Path(self.tmp.name),
+            workspace_root=self.tmp_path,
             retryable_tools={"browser_click"},
             state_change_tools={"browser_click"},
             ownership_skip_tools={"browser_tabs", "browser_close", "browser_install"},
         )
 
     def tearDown(self):
-        self.tmp.cleanup()
+        remove_tree(self.tmp_path)
 
     async def test_parse_tabs_text(self):
         text = "- 0: (current) [Home](https://example.com)\n- 1: [Blank](about:blank)"
@@ -74,6 +76,67 @@ class MCPManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tabs["status"], "failed")
         selected = json.loads(await self.manager.browser_tab_select({"index": 0}))
         self.assertEqual(selected["status"], "failed")
+
+    async def test_timeout_configuration_reads_environment(self):
+        previous = os.environ.get("AGENT_MCP_TOOL_TIMEOUT_SEC")
+        os.environ["AGENT_MCP_TOOL_TIMEOUT_SEC"] = "12.5"
+        try:
+            configured = MCPManager(workspace_root=self.tmp_path)
+        finally:
+            if previous is None:
+                os.environ.pop("AGENT_MCP_TOOL_TIMEOUT_SEC", None)
+            else:
+                os.environ["AGENT_MCP_TOOL_TIMEOUT_SEC"] = previous
+        self.assertEqual(configured.tool_timeout_seconds, 12.5)
+
+    async def test_runtime_status_reports_last_connection_state(self):
+        status = self.manager.runtime_status()
+        self.assertFalse(status["connected"])
+        self.assertEqual(status["status"], "not_attempted")
+        self.assertEqual(status["tool_count"], 0)
+        self.assertEqual(status["proxy_status"], {})
+
+        self.manager.last_connect_status = "failed"
+        self.manager.last_connect_error = "Access is denied"
+        failed = self.manager.runtime_status()
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["error"], "Access is denied")
+
+    async def test_refresh_proxy_status_caches_direct_mcp_summary(self):
+        self.manager.mcp_session = object()
+        self.manager._call_mcp_tool_raw = AsyncMock(
+            return_value={
+                "ok": True,
+                "structured": {
+                    "runtime_status": "ready",
+                    "startup_trust": "direct MCP proxy",
+                    "resume_state": "not applicable in direct MCP mode",
+                    "summary": "Guarded direct MCP mode is ready.",
+                },
+            }
+        )
+
+        payload = await self.manager._refresh_proxy_status()
+
+        self.assertEqual(payload["runtime_status"], "ready")
+        status = self.manager.runtime_status()
+        self.assertEqual(status["proxy_status"]["startup_trust"], "direct MCP proxy")
+
+    async def test_verify_step_accepts_agent_proxy_status_without_browser_context(self):
+        verification = await self.manager._verify_step(
+            "agent_proxy_status",
+            {},
+            {},
+            {
+                "ok": True,
+                "structured": {
+                    "runtime_status": "ready",
+                    "summary": "Guarded direct MCP mode is ready.",
+                },
+            },
+        )
+        self.assertTrue(verification["ok"])
+        self.assertEqual(verification["details"]["proxy_status"]["runtime_status"], "ready")
 
 
 if __name__ == "__main__":

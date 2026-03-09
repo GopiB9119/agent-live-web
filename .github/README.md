@@ -16,6 +16,8 @@ Important:
 
 ## Folder map in this repo
 - `copilot-instructions.md`: global behavior, tool routing, execution contract
+- `pull_request_template.md`: contributor PR checklist for verification and safety impact
+- `ISSUE_TEMPLATE/*`: contributor intake templates for bugs and feature requests
 - `PROMPT_SECURITY_TEMPLATES.md`: reusable security/privacy/prompt-injection blocks
 - `agents/agent-live-web.agent.md`: specialized live-web custom agent
 - `instructions/*.instructions.md`: path-scoped implementation rules
@@ -52,11 +54,12 @@ Important:
 5. Execute one action per step with strict verification.
 
 ## Operator checklist
-1. Use VS Code ownership mode (`vscode`) for browser work.
-2. Validate task JSON against `web-task.schema.json`.
-3. Run one tool action at a time and verify result.
-4. Ask confirmation before irreversible side effects.
-5. Report blockers with exact tool/selector/evidence.
+1. Start with the Python-first agent/workspace path unless direct VS Code MCP/browser control is required.
+2. Use VS Code ownership mode (`vscode`) for shared browser work.
+3. Validate task JSON against `web-task.schema.json` when using structured website flows.
+4. Run one tool action at a time and verify result.
+5. Ask confirmation before irreversible side effects.
+6. Report blockers with exact tool/selector/evidence.
 
 ## Official references
 - GitHub custom instructions:

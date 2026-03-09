@@ -33,10 +33,23 @@ try:
 except Exception:
     from .diagnostics_tools import DiagnosticsManager
 try:
+    from architecture.safety_policy import evaluate_tool_call
+except Exception:
+    from .architecture.safety_policy import evaluate_tool_call
+try:
+    from architecture.safety_audit import write_safety_event
+except Exception:
+    from .architecture.safety_audit import write_safety_event
+try:
+    from capability_router import get_turn_tool_context
+except Exception:
+    from .capability_router import get_turn_tool_context
+try:
     from tooling.registry import (
         auto_register_missing_local_tool_schemas,
         build_base_available_functions,
         build_local_callable_registry,
+        ensure_safety_confirm_schema_fields,
         register_or_update_tool_schema,
     )
 except Exception:
@@ -44,6 +57,7 @@ except Exception:
         auto_register_missing_local_tool_schemas,
         build_base_available_functions,
         build_local_callable_registry,
+        ensure_safety_confirm_schema_fields,
         register_or_update_tool_schema,
     )
 try:
@@ -94,7 +108,6 @@ RETRYABLE_TOOLS = {
     "browser_fill_form",
     "browser_select_option",
     "browser_press_key",
-    "browser_wait_for",
 }
 STATE_CHANGE_TOOLS = {
     "browser_click",
@@ -150,6 +163,7 @@ WORKFLOW_MANAGER = WorkflowManager(
     is_probably_text_source_fn=FS_MANAGER.is_probably_text_source,
     codebase_analyze_fn=FS_MANAGER.codebase_analyze,
     fs_analyze_file_fn=FS_MANAGER.fs_analyze_file,
+    tool_invoker_fn=lambda tool_name, arguments: execute_tool_with_policy(tool_name, arguments),
 )
 DIAGNOSTICS_MANAGER = DiagnosticsManager(
     agent_tools_provider=lambda: AGENT_TOOLS,
@@ -174,6 +188,191 @@ def calculate(expression: str) -> str:
 
 # Define the tools available to the OpenAI model (Starting with the local ones)
 AVAILABLE_FUNCTIONS = build_base_available_functions(calculate)
+
+
+def _summarize_for_audit(value, max_chars: int = 1200):
+    text = _redact_sensitive_text(str(value or ""))
+    if len(text) > max_chars:
+        return text[:max_chars] + "...[TRUNCATED]"
+    return text
+
+
+def _coerce_preview_result(raw_value):
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, dict):
+        return raw_value
+    try:
+        parsed = json.loads(str(raw_value))
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    return {"status": "ok", "preview": {"raw": str(raw_value)}}
+
+
+async def _build_preview_payload(tool_name: str, arguments: dict, target=None):
+    if tool_name == "fs_write":
+        return _coerce_preview_result(await FS_MANAGER.preview_fs_write(arguments))
+    if tool_name == "fs_copy":
+        return _coerce_preview_result(await FS_MANAGER.preview_fs_copy(arguments, move=False))
+    if tool_name == "fs_move":
+        return _coerce_preview_result(await FS_MANAGER.preview_fs_copy(arguments, move=True))
+    if tool_name == "fs_delete":
+        return _coerce_preview_result(await FS_MANAGER.preview_fs_delete(arguments))
+    if tool_name == "run_command":
+        return _coerce_preview_result(await COMMAND_MANAGER.preview_command(arguments))
+    if tool_name in {"fs_edit_lines", "fs_insert_lines", "fs_patch"} and callable(target):
+        preview_args = dict(arguments or {})
+        preview_args["dry_run"] = True
+        preview_result = await target(preview_args) if inspect.iscoroutinefunction(target) else target(preview_args)
+        return _coerce_preview_result(preview_result)
+    return None
+
+
+def _audit_decision(tool_name: str, requested_tool_name: str, arguments: dict, safety, preview_payload=None):
+    if safety.action_class == "read_only" and safety.decision == "allow":
+        return
+    write_safety_event(
+        WORKSPACE_ROOT,
+        {
+            "event_type": "decision",
+            "tool": tool_name,
+            "requested_tool": requested_tool_name,
+            "action_class": safety.action_class,
+            "risk_level": safety.risk_level,
+            "decision": safety.decision,
+            "reason_codes": safety.reason_codes,
+            "arguments_summary": _summarize_for_audit(arguments),
+            "preview_attached": bool(preview_payload),
+            "confirm_token_issued": bool(getattr(safety, "confirm_token", "")),
+        },
+        redact_fn=_redact_sensitive_text,
+    )
+
+
+def _audit_execution(tool_name: str, requested_tool_name: str, arguments: dict, safety, result_text: str, status: str, error: str = ""):
+    if safety.action_class == "read_only" and safety.decision == "allow":
+        return
+    write_safety_event(
+        WORKSPACE_ROOT,
+        {
+            "event_type": "execution",
+            "tool": tool_name,
+            "requested_tool": requested_tool_name,
+            "action_class": safety.action_class,
+            "risk_level": safety.risk_level,
+            "decision": safety.decision,
+            "execution_status": status,
+            "arguments_summary": _summarize_for_audit(arguments),
+            "result_summary": _summarize_for_audit(result_text),
+            "error": error,
+        },
+        redact_fn=_redact_sensitive_text,
+    )
+
+
+async def execute_tool_with_policy(tool_name: str, arguments: dict | None = None, requested_tool_name: str | None = None):
+    args = arguments if isinstance(arguments, dict) else {}
+    clean_name = str(tool_name or "").strip()
+    requested = str(requested_tool_name or clean_name).strip() or clean_name
+    turn_context = get_turn_tool_context()
+    allowed_tool_names = set(turn_context.get("allowed_tool_names", []) or [])
+
+    if allowed_tool_names and clean_name not in allowed_tool_names:
+        payload = {
+            "status": "blocked",
+            "tool": clean_name,
+            "requested_tool": requested,
+            "error": f"Tool '{clean_name}' is not exposed for the current task.",
+            "reason_code": "tool_not_exposed_for_turn",
+            "task_mode": turn_context.get("task_spec", {}).get("task_mode", "unknown"),
+            "surfaces": turn_context.get("surfaces", []),
+            "available_turn_tools": len(allowed_tool_names),
+        }
+        write_safety_event(
+            WORKSPACE_ROOT,
+            {
+                "event_type": "routing_block",
+                "tool": clean_name,
+                "requested_tool": requested,
+                "decision": "blocked",
+                "reason_codes": ["tool_not_exposed_for_turn"],
+                "arguments_summary": _summarize_for_audit(args),
+                "task_mode": turn_context.get("task_spec", {}).get("task_mode", "unknown"),
+                "surfaces": turn_context.get("surfaces", []),
+            },
+            redact_fn=_redact_sensitive_text,
+        )
+        return json.dumps(payload, ensure_ascii=True)
+
+    if clean_name == "call_tool":
+        nested_name = str(args.get("tool_name", "")).strip()
+        nested_arguments = args.get("arguments", {}) or {}
+        if not isinstance(nested_arguments, dict):
+            return json.dumps({"status": "failed", "error": "arguments must be an object"}, ensure_ascii=True)
+        if not nested_name:
+            return json.dumps({"status": "failed", "error": "tool_name is required"}, ensure_ascii=True)
+        if nested_name == "call_tool":
+            return json.dumps({"status": "failed", "error": "Recursive call_tool is not allowed"}, ensure_ascii=True)
+        return await execute_tool_with_policy(nested_name, nested_arguments, requested_tool_name=requested)
+
+    target = AVAILABLE_FUNCTIONS.get(clean_name)
+    if not target:
+        return json.dumps({"status": "failed", "error": f"Tool not found: {clean_name}"}, ensure_ascii=True)
+
+    safety = evaluate_tool_call(clean_name, args, WORKSPACE_ROOT)
+    preview_payload = None
+    if safety.decision not in {"allow", "allow_with_verification"}:
+        preview_payload = await _build_preview_payload(clean_name, args, target=target)
+        payload = {
+            "status": safety.decision,
+            **safety.to_dict(),
+        }
+        if preview_payload is not None:
+            payload["preview"] = preview_payload
+        if requested and requested != clean_name:
+            payload["requested_tool"] = requested
+            payload["tool_resolution"] = "fuzzy-match"
+        _audit_decision(clean_name, requested, args, safety, preview_payload=preview_payload)
+        return json.dumps(payload, ensure_ascii=True)
+
+    _audit_decision(clean_name, requested, args, safety)
+    try:
+        if inspect.iscoroutinefunction(target):
+            result = await target(args)
+        else:
+            try:
+                result = target(**args)
+            except TypeError:
+                result = target(args)
+    except Exception as e:
+        _audit_execution(clean_name, requested, args, safety, "", "failed", error=str(e))
+        return json.dumps({"status": "failed", "tool": clean_name, "error": str(e)}, ensure_ascii=True)
+
+    if requested and requested != clean_name:
+        try:
+            parsed = json.loads(str(result))
+            if isinstance(parsed, dict):
+                parsed.setdefault("requested_tool", requested)
+                parsed.setdefault("tool_resolution", "fuzzy-match")
+                _audit_execution(clean_name, requested, args, safety, json.dumps(parsed, ensure_ascii=True), parsed.get("status", "ok"))
+                return json.dumps(parsed, ensure_ascii=True)
+        except Exception:
+            pass
+        _audit_execution(clean_name, requested, args, safety, str(result), "ok")
+        return json.dumps(
+            {
+                "status": "ok",
+                "tool": clean_name,
+                "requested_tool": requested,
+                "tool_resolution": "fuzzy-match",
+                "result": str(result),
+            },
+            ensure_ascii=True,
+        )
+    _audit_execution(clean_name, requested, args, safety, str(result), "ok")
+    return result
 
 async def browser_tabs_list(_kwargs_dict=None):
     return await MCP_MANAGER.browser_tabs_list(_kwargs_dict)
@@ -313,25 +512,11 @@ async def call_tool(kwargs_dict):
         return json.dumps({"status": "failed", "error": "tool_name is required"}, ensure_ascii=True)
     if tool_name == "call_tool":
         return json.dumps({"status": "failed", "error": "Recursive call_tool is not allowed"}, ensure_ascii=True)
-
-    target = AVAILABLE_FUNCTIONS.get(tool_name)
-    if not target:
-        return json.dumps({"status": "failed", "error": f"Tool not found: {tool_name}"}, ensure_ascii=True)
-
-    try:
-        if inspect.iscoroutinefunction(target):
-            result = await target(arguments)
-        else:
-            try:
-                result = target(**arguments)
-            except TypeError:
-                result = target(arguments)
-        return json.dumps({"status": "ok", "tool_name": tool_name, "result": str(result)}, ensure_ascii=True)
-    except Exception as e:
-        return json.dumps({"status": "failed", "tool_name": tool_name, "error": str(e)}, ensure_ascii=True)
+    return await execute_tool_with_policy(tool_name, arguments, requested_tool_name="call_tool")
 
 
 AVAILABLE_FUNCTIONS.update(build_local_callable_registry(globals()))
+ensure_safety_confirm_schema_fields(AGENT_TOOLS)
 
 _added_local_schemas = auto_register_missing_local_tool_schemas(
     agent_tools=AGENT_TOOLS,
@@ -342,7 +527,7 @@ if _added_local_schemas:
 
 
 async def init_mcp_client():
-    await MCP_MANAGER.init_mcp_client(
+    return await MCP_MANAGER.init_mcp_client(
         agent_tools=AGENT_TOOLS,
         available_functions=AVAILABLE_FUNCTIONS,
         register_or_update_tool_schema_fn=register_or_update_tool_schema,
@@ -351,6 +536,10 @@ async def init_mcp_client():
 
 async def shutdown_mcp_client():
     await MCP_MANAGER.shutdown_mcp_client()
+
+
+def get_mcp_runtime_status():
+    return MCP_MANAGER.runtime_status()
 
 
 

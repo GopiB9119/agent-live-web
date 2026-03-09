@@ -1,0 +1,122 @@
+name: mcp-live-integration
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/mcp-live-integration.yml"
+      - "agent/agent/**"
+      - "browser-safety.js"
+      - "cli-agent.js"
+      - "edge-session.js"
+      - "mcp-jsonrpc-transport.js"
+      - "mcp-safety-adapter.js"
+      - "package.json"
+      - "package-lock.json"
+      - "playwright-edge-mcp.js"
+      - "playwright-mcp-launch-config.js"
+      - "scripts/mcp-init-page.js"
+      - "scripts/mcp-raw-probe.js"
+      - "tests/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/mcp-live-integration.yml"
+      - "agent/agent/**"
+      - "browser-safety.js"
+      - "cli-agent.js"
+      - "edge-session.js"
+      - "mcp-jsonrpc-transport.js"
+      - "mcp-safety-adapter.js"
+      - "package.json"
+      - "package-lock.json"
+      - "playwright-edge-mcp.js"
+      - "playwright-mcp-launch-config.js"
+      - "scripts/mcp-init-page.js"
+      - "scripts/mcp-raw-probe.js"
+      - "tests/**"
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mcp-live-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-mcp-integration:
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "agent/agent/requirements.txt"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r agent/agent/requirements.txt
+
+      - name: Run baseline verification
+        run: npm run verify
+
+      - name: Run live MCP integration tests
+        id: live_mcp_tests
+        env:
+          RUN_MCP_LIVE_TESTS: "1"
+          PLAYWRIGHT_MCP_LIVE_RUNTIME_ROOT: ${{ github.workspace }}\.playwright-mcp\live-tests
+          PLAYWRIGHT_MCP_SAVE_TRACE: "true"
+          PLAYWRIGHT_MCP_SAVE_SESSION: "true"
+          PLAYWRIGHT_MCP_HEADLESS: "true"
+          PLAYWRIGHT_MCP_LIVE_INIT_TIMEOUT_SEC: "90"
+          PLAYWRIGHT_MCP_LIVE_CALL_TIMEOUT_SEC: "60"
+        run: npm run agent:test:py:integration
+
+      - name: Run MCP proxy status report on failure
+        if: ${{ failure() && steps.live_mcp_tests.outcome == 'failure' }}
+        env:
+          PLAYWRIGHT_MCP_LIVE_RUNTIME_ROOT: ${{ github.workspace }}\.playwright-mcp\live-tests
+          PLAYWRIGHT_MCP_HEADLESS: "true"
+          PLAYWRIGHT_MCP_SAVE_TRACE: "true"
+          PLAYWRIGHT_MCP_SAVE_SESSION: "true"
+          PLAYWRIGHT_MCP_LIVE_INIT_TIMEOUT_SEC: "90"
+          PLAYWRIGHT_MCP_LIVE_CALL_TIMEOUT_SEC: "60"
+        run: |
+          New-Item -ItemType Directory -Force -Path .playwright-mcp\live-tests | Out-Null
+          npm run agent:mcp-status:json | Out-File -FilePath .playwright-mcp\live-tests\mcp-proxy-status.json -Encoding utf8
+
+      - name: Run raw MCP probe on failure
+        if: ${{ failure() && steps.live_mcp_tests.outcome == 'failure' }}
+        env:
+          PLAYWRIGHT_MCP_LIVE_RUNTIME_ROOT: ${{ github.workspace }}\.playwright-mcp\live-tests
+        run: npm run mcp:probe -- --target=launcher --profile=minimal --step=tools-list --init-timeout-ms=45000 --request-timeout-ms=30000
+
+      - name: Upload live MCP artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-live-integration-artifacts
+          path: |
+            .playwright-mcp/live-tests/mcp-proxy-status.json
+            .playwright-mcp/live-tests/**/active-owner.txt
+            .playwright-mcp/live-tests/**/edge-profile/.mcp-owner-lock.json
+            .playwright-mcp/live-tests/**/output/**
+          if-no-files-found: warn

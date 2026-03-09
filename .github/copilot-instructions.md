@@ -10,15 +10,17 @@ Apply these rules across this repository.
 - Retry once with a better selector/path; if it still fails, report blocker details.
 
 ## Tool routing
+- Repo/workspace tasks: prefer Python agent tools and local read/search/edit/execute flows.
 - Interactive websites: use Playwright Edge MCP tools.
+- Hybrid tasks: keep Python/agent flow as the control plane and browser/MCP as the tool surface.
 - Static retrieval: use fetch-style tooling.
-- Local code/files: use read/search/edit/execute tools.
 - Do not mix multiple control paths for the same step.
 
-## VS Code ownership
-- Default browser owner is `vscode`.
+## VS Code and browser ownership
+- Default MCP browser owner is `vscode`.
 - Keep one owner at a time for the shared browser profile.
 - If owner lock mismatch appears, stop and surface the exact lock error.
+- Use direct VS Code MCP mode only when the task actually needs browser/editor-side control.
 
 ## Local-first privacy and security
 - Prefer local runtime and local profile paths.

@@ -25,6 +25,8 @@ Natural language commands:
 
 Session commands:
 - help
+- confirm
+- cancel
 - new session
 - exit
 `.trim();
@@ -41,11 +43,40 @@ Session commands:
 
   console.log('Edge browser session started.');
   console.log('Type "help" for commands, "new session" for a fresh browser, or "exit" to quit.');
+  let pendingConfirmation = null;
 
   async function shutdown() {
+    pendingConfirmation = null;
     await session.close();
     await shutdownTracing();
     rl.close();
+  }
+
+  async function executeParsedCommand(parsed, extraParams = {}) {
+    try {
+      const result = await runInSpan(
+        'cli.command.execute',
+        { 'app.command.action': parsed.action },
+        async () => session.act(parsed.action, { ...parsed.params, ...extraParams })
+      );
+      if (result && (result.status === 'preview_required' || result.status === 'confirm_required')) {
+        pendingConfirmation = {
+          action: parsed.action,
+          params: { ...parsed.params },
+          confirmToken: result.confirm_token || ''
+        };
+        console.log(`Result: ${JSON.stringify(result)}`);
+        console.log('Type "confirm" to continue or "cancel" to discard this pending action.');
+        return;
+      }
+      pendingConfirmation = null;
+      if (result !== undefined) {
+        console.log(`Result: ${JSON.stringify(result)}`);
+      }
+    } catch (error) {
+      pendingConfirmation = null;
+      console.error(`Error: ${error.message}`);
+    }
   }
 
   async function handleCommand(input) {
@@ -57,7 +88,31 @@ Session commands:
       console.log(HELP_TEXT);
       return;
     }
+    if (lowered === 'confirm') {
+      if (!pendingConfirmation) {
+        console.log('No pending action to confirm.');
+        return;
+      }
+      const pending = pendingConfirmation;
+      await executeParsedCommand(
+        {
+          action: pending.action,
+          params: { ...pending.params }
+        },
+        {
+          confirm: true,
+          confirm_token: pending.confirmToken
+        }
+      );
+      return;
+    }
+    if (lowered === 'cancel') {
+      pendingConfirmation = null;
+      console.log('Pending action cleared.');
+      return;
+    }
     if (lowered === 'new session') {
+      pendingConfirmation = null;
       await session.newSession();
       console.log('New Edge browser session started.');
       return;
@@ -75,18 +130,7 @@ Session commands:
       return;
     }
 
-    try {
-      const result = await runInSpan(
-        'cli.command.execute',
-        { 'app.command.action': parsed.action },
-        async () => session.act(parsed.action, parsed.params)
-      );
-      if (result !== undefined) {
-        console.log(`Result: ${JSON.stringify(result)}`);
-      }
-    } catch (error) {
-      console.error(`Error: ${error.message}`);
-    }
+    await executeParsedCommand(parsed);
   }
 
   rl.on('line', handleCommand);

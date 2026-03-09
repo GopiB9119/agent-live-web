@@ -1,6 +1,13 @@
 ﻿const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+const {
+  PolicyDecision,
+  classifyBrowserAction,
+  issueBrowserConfirmToken,
+  normalizeActionParams,
+  validateBrowserConfirmToken
+} = require('./browser-safety');
 const { runInSpan, getActiveTraceMeta } = require('./tracing');
 
 function toInt(value, fallback) {
@@ -93,6 +100,12 @@ class EdgeSession {
       options.allowDomHtmlAdd !== undefined ? options.allowDomHtmlAdd : process.env.EDGE_ALLOW_DOM_HTML_ADD,
       this.localOperatorMode
     );
+    this.allowDestructiveDomActions = toBool(
+      options.allowDestructiveDomActions !== undefined
+        ? options.allowDestructiveDomActions
+        : process.env.EDGE_ALLOW_DESTRUCTIVE_DOM_ACTIONS,
+      false
+    );
     this.domFallbackOnFailure = toBool(
       options.domFallbackOnFailure !== undefined
         ? options.domFallbackOnFailure
@@ -121,7 +134,74 @@ class EdgeSession {
       options.logActionPayloads !== undefined ? options.logActionPayloads : process.env.EDGE_LOG_ACTION_PAYLOADS,
       false
     );
+    this.confirmationSecret =
+      options.confirmationSecret || process.env.EDGE_CONFIRMATION_SECRET || `edge:${process.pid}:${this.workspaceRoot}`;
     this.traceActive = false;
+  }
+
+  stripConfirmationParams(params = {}) {
+    return normalizeActionParams(params);
+  }
+
+  issueConfirmToken(action, params = {}) {
+    return issueBrowserConfirmToken(this.confirmationSecret, action, this.stripConfirmationParams(params));
+  }
+
+  validateConfirmToken(action, params = {}, token = '') {
+    return validateBrowserConfirmToken(this.confirmationSecret, action, this.stripConfirmationParams(params), token);
+  }
+
+  evaluateActionSafety(action, params = {}) {
+    const cleanParams = this.stripConfirmationParams(params);
+    const base = classifyBrowserAction(action, cleanParams, {
+      workspaceRoot: this.workspaceRoot,
+      allowDomHtmlAdd: this.allowDomHtmlAdd,
+      allowDestructiveDomActions: this.allowDestructiveDomActions,
+      restrictWriteToWorkspace: this.restrictWriteToWorkspace
+    });
+    const confirmRequested = toBool(params.confirm, false);
+    const confirmToken = String(params.confirm_token || params.confirmToken || '').trim();
+
+    if ([PolicyDecision.PREVIEW_REQUIRED, PolicyDecision.CONFIRM_REQUIRED].includes(base.decision)) {
+      if (confirmRequested && this.validateConfirmToken(action, cleanParams, confirmToken)) {
+        return {
+          ...base,
+          decision: PolicyDecision.ALLOW_WITH_VERIFICATION,
+          reasonCodes: [...base.reasonCodes, 'confirmed'],
+          confirmToken: ''
+        };
+      }
+      return {
+        ...base,
+        confirmToken: this.issueConfirmToken(action, cleanParams)
+      };
+    }
+
+    return {
+      ...base,
+      confirmToken: ''
+    };
+  }
+
+  formatSafetyGateResponse(action, safety) {
+    const payload = {
+      status: safety.decision,
+      action,
+      action_class: safety.actionClass,
+      risk_level: safety.riskLevel,
+      reason_codes: Array.isArray(safety.reasonCodes) ? safety.reasonCodes : [],
+      requires_verification: Boolean(safety.requiresVerification)
+    };
+    if (safety.previewSummary) {
+      payload.preview = {
+        status: 'ok',
+        preview: safety.previewSummary
+      };
+    }
+    if (safety.confirmToken) {
+      payload.confirm_token = safety.confirmToken;
+    }
+    return payload;
   }
 
   async open() {
@@ -186,10 +266,18 @@ class EdgeSession {
   }
 
   async act(action, params = {}) {
+    const requestedParams = params || {};
+    const executionParams = this.stripConfirmationParams(requestedParams);
+    const safety = this.evaluateActionSafety(action, requestedParams);
+    if ([PolicyDecision.PREVIEW_REQUIRED, PolicyDecision.CONFIRM_REQUIRED, PolicyDecision.BLOCKED].includes(safety.decision)) {
+      const gated = this.formatSafetyGateResponse(action, safety);
+      this.log('WARN', 'Action gated by browser safety policy', { action, safety: sanitizeForLog(gated) });
+      return gated;
+    }
     if (!this.page) throw new Error('Edge session is not open');
 
     const startedAt = Date.now();
-    const safeParams = this.logActionPayloads ? this.sanitizeActionParams(action, params) : undefined;
+    const safeParams = this.logActionPayloads ? this.sanitizeActionParams(action, executionParams) : undefined;
     this.log('INFO', 'Action started', safeParams ? { action, params: safeParams } : { action });
 
     try {
@@ -204,45 +292,45 @@ class EdgeSession {
           this.withActionRetry(action, async () => {
             switch (action) {
               case 'goto':
-                if (!params.url) throw new Error('Missing url');
-                return this.handleGoto(params);
+                if (!executionParams.url) throw new Error('Missing url');
+                return this.handleGoto(executionParams);
               case 'search':
-                return this.handleSearch(params);
+                return this.handleSearch(executionParams);
               case 'click':
               case 'clickXPath':
               case 'clickByText':
-                return this.handleClick(action, params);
+                return this.handleClick(action, executionParams);
               case 'edit':
-                return this.handleFill(params);
+                return this.handleFill(executionParams);
               case 'type':
-                return this.handleType(params);
+                return this.handleType(executionParams);
               case 'delete':
-                return this.handleDelete(params);
+                return this.handleDelete(executionParams);
               case 'add':
                 if (!this.allowDomHtmlAdd) {
                   throw new Error('add action is disabled by security policy (EDGE_ALLOW_DOM_HTML_ADD=false)');
                 }
-                return this.handleAdd(params);
+                return this.handleAdd(executionParams);
               case 'exists':
-                return this.handleExists(params);
+                return this.handleExists(executionParams);
               case 'getText':
-                return this.handleGetText(params);
+                return this.handleGetText(executionParams);
               case 'waitFor':
-                return this.handleWaitFor(params);
+                return this.handleWaitFor(executionParams);
               case 'wait':
-                return this.handleWait(params);
+                return this.handleWait(executionParams);
               case 'download':
-                return this.handleDownload(params);
+                return this.handleDownload(executionParams);
               case 'upload':
-                return this.handleUpload(params);
+                return this.handleUpload(executionParams);
               case 'scroll':
-                return this.handleScroll(params);
+                return this.handleScroll(executionParams);
               case 'screenshot':
-                return this.handleScreenshot(params);
+                return this.handleScreenshot(executionParams);
               case 'startTrace':
                 return this.handleStartTrace();
               case 'stopTrace':
-                return this.handleStopTrace(params);
+                return this.handleStopTrace(executionParams);
               default:
                 throw new Error(`Unsupported action: ${action}`);
             }

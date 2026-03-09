@@ -1,6 +1,19 @@
 import inspect
 
 
+SAFETY_CONFIRM_PROPERTIES = {
+    "confirm": {
+        "type": "boolean",
+        "description": "Explicit same-run confirmation for actions that require confirmation.",
+        "default": False,
+    },
+    "confirm_token": {
+        "type": "string",
+        "description": "Confirmation token returned by a prior preview/confirm_required response.",
+    },
+}
+
+
 LOCAL_CALLABLE_NAMES = [
     "browser_tabs_list",
     "browser_tab_select",
@@ -84,7 +97,7 @@ def register_or_update_tool_schema(agent_tools, name: str, description: str, par
         "function": {
             "name": clean_name,
             "description": description or f"Tool: {clean_name}",
-            "parameters": parameters or {"type": "object", "properties": {}, "required": []},
+            "parameters": with_standard_safety_confirm_fields(parameters or {"type": "object", "properties": {}, "required": []}),
         },
     }
 
@@ -97,6 +110,35 @@ def register_or_update_tool_schema(agent_tools, name: str, description: str, par
             return
 
     agent_tools.append(schema_obj)
+
+
+def with_standard_safety_confirm_fields(parameters: dict):
+    if not isinstance(parameters, dict):
+        parameters = {"type": "object", "properties": {}, "required": []}
+
+    properties = parameters.get("properties", {})
+    if not isinstance(properties, dict):
+        properties = {}
+    merged = dict(properties)
+    for key, value in SAFETY_CONFIRM_PROPERTIES.items():
+        if key not in merged:
+            merged[key] = value
+    updated = dict(parameters)
+    updated["properties"] = merged
+    if "required" not in updated or not isinstance(updated.get("required"), list):
+        updated["required"] = []
+    return updated
+
+
+def ensure_safety_confirm_schema_fields(agent_tools):
+    if not isinstance(agent_tools, list):
+        return
+    for item in agent_tools:
+        if not isinstance(item, dict):
+            continue
+        fn = item.get("function", {})
+        params = fn.get("parameters", {"type": "object", "properties": {}, "required": []})
+        fn["parameters"] = with_standard_safety_confirm_fields(params)
 
 
 def auto_register_missing_local_tool_schemas(agent_tools, available_functions):

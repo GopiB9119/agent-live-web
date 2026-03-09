@@ -9,9 +9,7 @@ if (!valid.has(requested)) {
   process.exit(1);
 }
 
-const defaultRuntimeRoot = process.env.LOCALAPPDATA
-  ? path.join(process.env.LOCALAPPDATA, 'PlaywrightMCP')
-  : path.join(process.cwd(), '.playwright-mcp');
+const defaultRuntimeRoot = path.join(process.cwd(), '.playwright-mcp');
 const ownerFile = process.env.PLAYWRIGHT_MCP_OWNER_FILE || path.join(defaultRuntimeRoot, 'active-owner.txt');
 
 fs.mkdirSync(path.dirname(ownerFile), { recursive: true });

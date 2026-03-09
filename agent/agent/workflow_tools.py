@@ -16,11 +16,13 @@ class WorkflowManager:
         is_probably_text_source_fn,
         codebase_analyze_fn,
         fs_analyze_file_fn,
+        tool_invoker_fn=None,
     ):
         self.available_functions_provider = available_functions_provider
         self.is_probably_text_source = is_probably_text_source_fn
         self.codebase_analyze_fn = codebase_analyze_fn
         self.fs_analyze_file_fn = fs_analyze_file_fn
+        self.tool_invoker_fn = tool_invoker_fn
 
     @staticmethod
     def coerce_tool_result_to_dict(raw_result):
@@ -43,6 +45,16 @@ class WorkflowManager:
         return mapping if isinstance(mapping, dict) else {}
 
     async def _invoke_tool_by_name(self, tool_name: str, arguments: dict):
+        if callable(self.tool_invoker_fn):
+            try:
+                guarded_result = await self.tool_invoker_fn(tool_name, arguments)
+                result_dict = self.coerce_tool_result_to_dict(guarded_result)
+                if "status" not in result_dict:
+                    result_dict["status"] = "ok"
+                return result_dict
+            except Exception as e:
+                return {"status": "failed", "error": str(e)}
+
         available_functions = self._get_available_functions()
         target = available_functions.get(tool_name)
         if not target:

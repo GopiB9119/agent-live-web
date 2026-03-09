@@ -69,6 +69,8 @@ agent/agent/
   - Started v5.2 live MCP integration coverage with opt-in tests in `agent/agent/tests/integration/test_mcp_live_integration.py`.
 - Next:
   - Add trace-attachment capture for failed live integration runs and wire a scheduled/nightly integration workflow.
+  - Implement the shared safety-gating design in `docs/SAFETY_GATING_DESIGN.md` so file, command, browser, memory, and OAuth actions use one policy model.
+  - Add routed VS Code/Pylance/Playwright capability adoption through `docs/VSCODE_PYTHON_AGENT_INTEGRATION_PLAN.md` instead of growing `tools.py` into a flat multi-surface catalog.
 
 ## Engineering Rules
 - One tool = one clear responsibility.
@@ -76,6 +78,7 @@ agent/agent/
 - Prefer additive refactors; keep old interfaces until migration completes.
 - Never break existing tool names without adding compatibility aliases.
 - Run `agent_health_report` after any tool schema or registry change.
+- Keep all state-changing tools behind the shared safety-gating policy before expanding autonomy.
 
 ## Operational Checklist
 - Before merge:

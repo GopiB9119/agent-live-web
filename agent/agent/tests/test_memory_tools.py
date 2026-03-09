@@ -1,17 +1,16 @@
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from memory_tools import MemoryManager
+from tests_support import create_repo_local_temp_dir, remove_tree
 
 
 class MemoryManagerTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.workspace = Path(self.tmp.name).resolve()
+        self.workspace = create_repo_local_temp_dir(Path(__file__), "test-memory-tools", "memory-tools")
         self.memory_dir = self.workspace / "memory"
         self.long_term = self.workspace / "MEMORY.md"
         self.vector_index = self.memory_dir / ".vector_index.json"
@@ -42,7 +41,7 @@ class MemoryManagerTests(unittest.IsolatedAsyncioTestCase):
         )
 
     def tearDown(self):
-        self.tmp.cleanup()
+        remove_tree(self.workspace)
 
     async def test_memory_log_and_get(self):
         logged = json.loads(
