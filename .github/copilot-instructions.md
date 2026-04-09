@@ -19,6 +19,7 @@ Apply these rules across this repository.
 - Default browser owner is `vscode`.
 - Keep one owner at a time for the shared browser profile.
 - If owner lock mismatch appears, stop and surface the exact lock error.
+- Detailed owner-lock and runtime rules: see `.github/instructions/playwright-edge.instructions.md`.
 
 ## Local-first privacy and security
 - Prefer local runtime and local profile paths.
@@ -32,8 +33,12 @@ Apply these rules across this repository.
 - Edit protected files only when the user explicitly requests governance/instruction changes.
 
 ## Structured website JSON behavior
-If user gives website task JSON:
-1. Validate against `.github/skills/web-works/web-task.schema.json`.
-2. If invalid, report exact field errors and stop.
-3. If valid, execute `steps` in order with verification.
-4. Respect side-effect policy and confirmation flags.
+- Website task JSON must validate against `.github/skills/web-works/web-task.schema.json`.
+- Detailed task workflow: see `.github/skills/web-works/SKILL.md` and `.github/instructions/web-task-json.instructions.md`.
+
+## Lane-specific rules
+- **Live web / Playwright**: `.github/agents/agent-live-web.agent.md`, `.github/instructions/playwright-edge.instructions.md`, `.github/skills/web-works/SKILL.md`
+- **Python agent**: `.github/instructions/python-agent.instructions.md`
+- **Governance authoring**: `.github/instructions/live-web-governance.instructions.md`
+
+Do not duplicate lane-specific rules here. Keep this file short and global.

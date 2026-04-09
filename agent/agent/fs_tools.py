@@ -4,6 +4,10 @@ import json
 import re
 import shutil
 from pathlib import Path
+try:
+    from runtime_utils import redact_sensitive_data as _redact_sensitive_data, redact_sensitive_text as _redact_sensitive_text
+except Exception:
+    from .runtime_utils import redact_sensitive_data as _redact_sensitive_data, redact_sensitive_text as _redact_sensitive_text
 
 
 class FSManager:
@@ -22,6 +26,18 @@ class FSManager:
         self.resolve_workspace_path = resolve_workspace_path_fn
         self.noise_dir_names = set(noise_dir_names or [])
         self.binary_suffixes = set(binary_suffixes or [])
+
+    @staticmethod
+    def _sanitize_text(value, max_chars=50000):
+        return _redact_sensitive_text(value, max_chars=max_chars)
+
+    @staticmethod
+    def _sanitize_payload(value, max_chars=50000):
+        return _redact_sensitive_data(value, max_chars=max_chars)
+
+    @classmethod
+    def _json_response(cls, payload, max_chars=50000):
+        return json.dumps(cls._sanitize_payload(payload, max_chars=max_chars), ensure_ascii=True)
 
     @staticmethod
     def _language_from_path(path_obj: Path) -> str:
@@ -150,17 +166,16 @@ class FSManager:
                     break
 
             entries.sort(key=lambda x: x["path"])
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "ok",
                     "root": root.relative_to(self.workspace_root).as_posix() if root != self.workspace_root else ".",
                     "count": len(entries),
                     "entries": entries,
-                },
-                ensure_ascii=True,
+                }
             )
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})
 
     async def fs_read(self, kwargs_dict):
         kwargs = kwargs_dict or {}
@@ -172,12 +187,12 @@ class FSManager:
         try:
             file_path = self.resolve_workspace_path(path_value, must_exist=True)
             if not file_path.is_file():
-                return json.dumps({"status": "failed", "error": f"Not a file: {file_path}"}, ensure_ascii=True)
+                return self._json_response({"status": "failed", "error": f"Not a file: {file_path}"})
 
             content = file_path.read_text(encoding=encoding, errors="replace")
             truncated = len(content) > max_chars
-            payload = content[:max_chars]
-            return json.dumps(
+            payload = self._sanitize_text(content[:max_chars], max_chars=max_chars)
+            return self._json_response(
                 {
                     "status": "ok",
                     "path": file_path.relative_to(self.workspace_root).as_posix(),
@@ -185,10 +200,10 @@ class FSManager:
                     "truncated": truncated,
                     "content": payload,
                 },
-                ensure_ascii=True,
+                max_chars=max_chars,
             )
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})
 
     async def fs_read_batch(self, kwargs_dict):
         kwargs = kwargs_dict or {}
@@ -199,7 +214,7 @@ class FSManager:
         max_chars_per_file = max(200, min(max_chars_per_file, 500000))
 
         if not isinstance(paths, list) or not paths:
-            return json.dumps({"status": "failed", "error": "paths must be a non-empty array"}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": "paths must be a non-empty array"})
 
         results = []
         failures = []
@@ -218,24 +233,24 @@ class FSManager:
                         "status": "ok",
                         "chars": len(content),
                         "truncated": len(content) > max_chars_per_file,
-                        "content": content[:max_chars_per_file],
+                        "content": self._sanitize_text(content[:max_chars_per_file], max_chars=max_chars_per_file),
                     }
                 )
             except Exception as e:
                 if missing_ok:
-                    results.append({"path": str(raw_path), "status": "failed", "error": str(e)})
+                    results.append({"path": str(raw_path), "status": "failed", "error": self._sanitize_text(str(e), max_chars=4000)})
                 else:
-                    return json.dumps({"status": "failed", "error": str(e), "path": str(raw_path)}, ensure_ascii=True)
+                    return self._json_response({"status": "failed", "error": str(e), "path": str(raw_path)})
                 failures.append(str(raw_path))
 
-        return json.dumps(
+        return self._json_response(
             {
                 "status": "ok",
                 "count": len(results),
                 "failed_count": len(failures),
                 "results": results,
             },
-            ensure_ascii=True,
+            max_chars=max_chars_per_file,
         )
 
     async def fs_edit_lines(self, kwargs_dict):
@@ -296,7 +311,7 @@ class FSManager:
                 file_path.write_text(updated, encoding=encoding, errors="replace")
                 wrote = True
 
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "ok",
                     "path": file_path.relative_to(self.workspace_root).as_posix(),
@@ -308,11 +323,10 @@ class FSManager:
                     "range": {"start_line": start_line, "end_line": end_line, "effective_end_line": safe_end},
                     "before_hash": hashlib.sha1(original.encode("utf-8", errors="ignore")).hexdigest(),
                     "after_hash": hashlib.sha1(updated.encode("utf-8", errors="ignore")).hexdigest(),
-                },
-                ensure_ascii=True,
+                }
             )
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})
 
     async def fs_insert_lines(self, kwargs_dict):
         kwargs = kwargs_dict or {}
@@ -348,7 +362,7 @@ class FSManager:
                 file_path.write_text(updated, encoding=encoding, errors="replace")
                 wrote = True
 
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "ok",
                     "path": file_path.relative_to(self.workspace_root).as_posix(),
@@ -361,11 +375,10 @@ class FSManager:
                     "dry_run": dry_run,
                     "before_hash": hashlib.sha1(original.encode("utf-8", errors="ignore")).hexdigest(),
                     "after_hash": hashlib.sha1(updated.encode("utf-8", errors="ignore")).hexdigest(),
-                },
-                ensure_ascii=True,
+                }
             )
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})
 
     async def fs_write(self, kwargs_dict):
         kwargs = kwargs_dict or {}
@@ -380,17 +393,16 @@ class FSManager:
             mode = "a" if append else "w"
             with file_path.open(mode, encoding=encoding, errors="replace", newline="") as fh:
                 fh.write(content)
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "ok",
                     "path": file_path.relative_to(self.workspace_root).as_posix(),
                     "append": append,
                     "written_chars": len(content),
-                },
-                ensure_ascii=True,
+                }
             )
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})
 
     async def fs_copy(self, kwargs_dict):
         kwargs = kwargs_dict or {}
@@ -424,18 +436,17 @@ class FSManager:
                 shutil.copy2(source_path, destination_path)
                 copied_type = "file"
 
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "ok",
                     "type": copied_type,
                     "source": source_path.relative_to(self.workspace_root).as_posix(),
                     "destination": destination_path.relative_to(self.workspace_root).as_posix(),
                     "overwrite": overwrite,
-                },
-                ensure_ascii=True,
+                }
             )
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})
 
     async def fs_move(self, kwargs_dict):
         kwargs = kwargs_dict or {}
@@ -464,17 +475,16 @@ class FSManager:
             destination_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(source_path), str(destination_path))
 
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "ok",
                     "source": source_path.relative_to(self.workspace_root).as_posix(),
                     "destination": destination_path.relative_to(self.workspace_root).as_posix(),
                     "overwrite": overwrite,
-                },
-                ensure_ascii=True,
+                }
             )
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})
 
     async def fs_delete(self, kwargs_dict):
         kwargs = kwargs_dict or {}
@@ -487,16 +497,15 @@ class FSManager:
 
             if not target_path.exists():
                 if missing_ok:
-                    return json.dumps(
+                    return self._json_response(
                         {
                             "status": "ok",
                             "path": target_path.relative_to(self.workspace_root).as_posix(),
                             "deleted": False,
                             "missing": True,
-                        },
-                        ensure_ascii=True,
+                        }
                     )
-                return json.dumps({"status": "failed", "error": f"Path does not exist: {target_path}"}, ensure_ascii=True)
+                return self._json_response({"status": "failed", "error": f"Path does not exist: {target_path}"})
 
             if target_path.is_dir():
                 if recursive:
@@ -505,27 +514,25 @@ class FSManager:
                     try:
                         target_path.rmdir()
                     except OSError:
-                        return json.dumps(
+                        return self._json_response(
                             {"status": "failed", "error": "Directory is not empty. Set recursive=true to delete it."},
-                            ensure_ascii=True,
                         )
                 deleted_type = "dir"
             else:
                 target_path.unlink()
                 deleted_type = "file"
 
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "ok",
                     "path": target_path.relative_to(self.workspace_root).as_posix(),
                     "deleted": True,
                     "type": deleted_type,
                     "recursive": recursive,
-                },
-                ensure_ascii=True,
+                }
             )
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})
 
     async def fs_patch(self, kwargs_dict):
         kwargs = kwargs_dict or {}
@@ -538,17 +545,17 @@ class FSManager:
 
         try:
             if not isinstance(edits, list) or len(edits) == 0:
-                return json.dumps({"status": "failed", "error": "edits must be a non-empty array"}, ensure_ascii=True)
+                return self._json_response({"status": "failed", "error": "edits must be a non-empty array"})
 
             file_path = self.resolve_workspace_path(path_value, must_exist=False)
             exists = file_path.exists()
             if not exists and not create_if_missing:
-                return json.dumps({"status": "failed", "error": f"File does not exist: {file_path}"}, ensure_ascii=True)
+                return self._json_response({"status": "failed", "error": f"File does not exist: {file_path}"})
 
             original = ""
             if exists:
                 if not file_path.is_file():
-                    return json.dumps({"status": "failed", "error": f"Not a file: {file_path}"}, ensure_ascii=True)
+                    return self._json_response({"status": "failed", "error": f"Not a file: {file_path}"})
                 original = file_path.read_text(encoding=encoding, errors="replace")
 
             updated = original
@@ -557,14 +564,14 @@ class FSManager:
 
             for idx, edit in enumerate(edits, start=1):
                 if not isinstance(edit, dict):
-                    return json.dumps({"status": "failed", "error": f"edit #{idx} must be an object"}, ensure_ascii=True)
+                    return self._json_response({"status": "failed", "error": f"edit #{idx} must be an object"})
                 find_value = edit.get("find")
                 replace_value = str(edit.get("replace", ""))
                 use_regex = bool(edit.get("regex", False))
                 count_raw = int(edit.get("count", 0))
 
                 if find_value is None or find_value == "":
-                    return json.dumps({"status": "failed", "error": f"edit #{idx} missing non-empty 'find'"}, ensure_ascii=True)
+                    return self._json_response({"status": "failed", "error": f"edit #{idx} missing non-empty 'find'"})
 
                 try:
                     if use_regex:
@@ -580,7 +587,7 @@ class FSManager:
                             applied = total_matches
                             next_text = updated.replace(find_text, replace_value)
                 except re.error as rex:
-                    return json.dumps({"status": "failed", "error": f"Regex error in edit #{idx}: {rex}"}, ensure_ascii=True)
+                    return self._json_response({"status": "failed", "error": f"Regex error in edit #{idx}: {rex}"})
 
                 edit_results.append(
                     {
@@ -596,7 +603,7 @@ class FSManager:
 
             changed = updated != original
             if strict and missed:
-                return json.dumps(
+                return self._json_response(
                     {
                         "status": "failed",
                         "error": "One or more edits had zero matches in strict mode.",
@@ -605,8 +612,7 @@ class FSManager:
                         "dry_run": dry_run,
                         "path": file_path.relative_to(self.workspace_root).as_posix(),
                         "edit_results": edit_results,
-                    },
-                    ensure_ascii=True,
+                    }
                 )
 
             wrote = False
@@ -619,7 +625,7 @@ class FSManager:
             before_hash = hashlib.sha1(original.encode("utf-8", errors="ignore")).hexdigest()
             after_hash = hashlib.sha1(updated.encode("utf-8", errors="ignore")).hexdigest()
 
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "ok",
                     "path": file_path.relative_to(self.workspace_root).as_posix(),
@@ -633,11 +639,10 @@ class FSManager:
                     "after_hash": after_hash,
                     "chars_before": len(original),
                     "chars_after": len(updated),
-                },
-                ensure_ascii=True,
+                }
             )
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})
 
     async def fs_search(self, kwargs_dict):
         kwargs = kwargs_dict or {}
@@ -651,11 +656,11 @@ class FSManager:
 
         try:
             if not pattern:
-                return json.dumps({"status": "failed", "error": "pattern is required"}, ensure_ascii=True)
+                return self._json_response({"status": "failed", "error": "pattern is required"})
 
             root = self.resolve_workspace_path(path_value, must_exist=True)
             if not root.is_dir():
-                return json.dumps({"status": "failed", "error": f"Not a directory: {root}"}, ensure_ascii=True)
+                return self._json_response({"status": "failed", "error": f"Not a directory: {root}"})
 
             flags = 0 if case_sensitive else re.IGNORECASE
             compiled = re.compile(pattern if use_regex else re.escape(pattern), flags=flags)
@@ -678,7 +683,7 @@ class FSManager:
                             {
                                 "path": file_path.relative_to(self.workspace_root).as_posix(),
                                 "line": line_number,
-                                "text": line.strip()[:400],
+                                "text": self._sanitize_text(line.strip()[:400], max_chars=400),
                             }
                         )
                         if len(matches) >= max_results:
@@ -686,17 +691,16 @@ class FSManager:
                 if len(matches) >= max_results:
                     break
 
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "ok",
                     "root": root.relative_to(self.workspace_root).as_posix() if root != self.workspace_root else ".",
                     "count": len(matches),
                     "matches": matches,
-                },
-                ensure_ascii=True,
+                }
             )
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})
 
     async def fs_analyze_file(self, kwargs_dict):
         kwargs = kwargs_dict or {}
@@ -709,7 +713,7 @@ class FSManager:
         try:
             file_path = self.resolve_workspace_path(path_value, must_exist=True)
             if not file_path.is_file():
-                return json.dumps({"status": "failed", "error": f"Not a file: {file_path}"}, ensure_ascii=True)
+                return self._json_response({"status": "failed", "error": f"Not a file: {file_path}"})
 
             content = file_path.read_text(encoding=encoding, errors="replace")
             truncated = len(content) > max_chars
@@ -724,10 +728,10 @@ class FSManager:
                 "analysis": analysis,
             }
             if include_preview:
-                payload["preview"] = parse_content[:1200]
-            return json.dumps(payload, ensure_ascii=True)
+                payload["preview"] = self._sanitize_text(parse_content[:1200], max_chars=1200)
+            return self._json_response(payload, max_chars=max_chars)
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})
 
     async def codebase_analyze(self, kwargs_dict=None):
         kwargs = kwargs_dict or {}
@@ -741,7 +745,7 @@ class FSManager:
         try:
             root = self.resolve_workspace_path(path_value, must_exist=True)
             if not root.is_dir():
-                return json.dumps({"status": "failed", "error": f"Not a directory: {root}"}, ensure_ascii=True)
+                return self._json_response({"status": "failed", "error": f"Not a directory: {root}"})
 
             files = []
             dirs_set = set()
@@ -793,7 +797,7 @@ class FSManager:
                 reverse=True,
             )
 
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "ok",
                     "root": root.relative_to(self.workspace_root).as_posix() if root != self.workspace_root else ".",
@@ -803,8 +807,7 @@ class FSManager:
                     "language_distribution": language_distribution,
                     "key_files": key_files[:80],
                     "largest_files": largest_files,
-                },
-                ensure_ascii=True,
+                }
             )
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})

@@ -2,6 +2,37 @@
 
 Use these prompts with the `agent-live-web` agent.
 
+## What This File Is For
+- Reusable operator-facing prompt shapes for Playwright Edge MCP, Playwright MCP, and live web autonomous workflows.
+- Fast ways to start a task with the right scope, risk, evidence, and recovery expectations.
+
+## What This File Is Not For
+- Repo-wide governance rules.
+- Runtime implementation requirements.
+- Generic prompts that do not belong to the live-web lane.
+
+## Why These Prompts Exist
+- Live web failures usually begin with weak task intake, unclear side-effect boundaries, or missing evidence requirements.
+- These prompts reduce ambiguity before the first browser action.
+
+## 0) Structured Task Brief First
+Use the dedicated prompt file first when the task is vague, high-risk, or likely to have side effects.
+
+Prompt file:
+- `.github/prompts/playwright-live-web-task-brief.prompt.md`
+
+Required fields from that brief:
+- what you want
+- what you do not want
+- why it matters
+- surface in scope
+- who owns auth or account context
+- how to work
+- risks and bad impact to avoid
+- evidence required
+- stop-and-ask actions
+- done condition
+
 ## 1) Master Prompt (all-rounder)
 ```txt
 Use playwright-edge MCP tools for interactive web steps and workspace tools for local file/code steps.
@@ -10,6 +41,17 @@ Work autonomously with strict safety and verification.
 Execution profile: <balanced|deep|turbo>
 Task ID: <task-id>
 Checkpoint: .playwright-mcp/resume-state.json
+
+Task brief:
+- What I want: <goal>
+- What I do not want: <avoid>
+- Why: <reason>
+- Surface: <site/app/files>
+- Who / Owner / Login Context: <owner or login assumptions>
+- Risks / Bad Impact To Avoid: <risk list>
+- Evidence Required: <proof of success>
+- Stop And Ask Before: <irreversible actions>
+- Done When: <finish condition>
 
 Rules:
 1) Understand first (website + files) before side effects.
@@ -58,6 +100,7 @@ Collect evidence first:
 2) Visible labels/roles/sections
 3) Likely selector candidates (ordered by stability)
 4) Top 2 execution strategies with risk
+5) Bad impact if the next action is wrong
 
 Pick safest strategy, execute one step, verify, continue.
 ```
@@ -80,4 +123,8 @@ Order:
 5) Run validation commands
 6) Return final evidence summary
 ```
+
+## When To Avoid These Prompts
+- If the task is really a repo-governance change with no browser goal, use the relevant `.github` governance files directly.
+- If the task is a reusable multi-step workflow with assets, prefer the skill or custom agent over inventing a new prompt.
 

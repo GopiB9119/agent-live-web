@@ -8,6 +8,10 @@ from urllib.parse import urlparse
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+try:
+    from runtime_utils import redact_sensitive_data as _redact_sensitive_data, redact_sensitive_text as _redact_sensitive_text
+except Exception:
+    from .runtime_utils import redact_sensitive_data as _redact_sensitive_data, redact_sensitive_text as _redact_sensitive_text
 
 
 class MCPManager:
@@ -32,6 +36,18 @@ class MCPManager:
         self.ownership_skip_tools = set(ownership_skip_tools or {"browser_tabs", "browser_close", "browser_install"})
         self.mcp_session = None
         self._mcp_exit_stack = None
+
+    @staticmethod
+    def _sanitize_text(value, max_chars=4000):
+        return _redact_sensitive_text(value, max_chars=max_chars)
+
+    @staticmethod
+    def _sanitize_payload(value, max_chars=4000):
+        return _redact_sensitive_data(value, max_chars=max_chars)
+
+    @classmethod
+    def _json_response(cls, payload, max_chars=4000):
+        return json.dumps(cls._sanitize_payload(payload, max_chars=max_chars), ensure_ascii=True)
 
     @staticmethod
     def _serialize_call_result(result) -> str:
@@ -197,6 +213,53 @@ class MCPManager:
                 state["snapshot_hash"] = hashlib.sha1(snap.get("text", "").encode("utf-8", errors="ignore")).hexdigest()
         return state
 
+    def _resolve_output_dir(self) -> Path:
+        default_runtime_root = (
+            Path(os.environ["LOCALAPPDATA"]) / "PlaywrightMCP"
+            if os.environ.get("LOCALAPPDATA")
+            else self.workspace_root / ".playwright-mcp"
+        )
+        return Path(os.environ.get("PLAYWRIGHT_MCP_OUTPUT_DIR", str(default_runtime_root / "output")))
+
+    async def capture_debug_artifacts(self, include_snapshot=True, max_output_files=100):
+        tabs_state = self._sanitize_payload(await self._list_tabs_state(), max_chars=40000)
+        snapshot = {"ok": False, "text": "", "error": None}
+        if include_snapshot and self.mcp_session is not None:
+            snap = await self._call_mcp_tool_raw("browser_snapshot", {})
+            snapshot = {
+                "ok": snap.get("ok", False),
+                "text": self._sanitize_text(snap.get("text", ""), max_chars=200000),
+                "error": self._sanitize_text(snap.get("error"), max_chars=4000),
+            }
+
+        output_dir = self._resolve_output_dir()
+        output_files = []
+        if output_dir.exists():
+            for item in sorted(output_dir.rglob("*")):
+                if len(output_files) >= max(1, int(max_output_files)):
+                    break
+                if not item.is_file():
+                    continue
+                try:
+                    rel_path = item.relative_to(output_dir).as_posix()
+                except Exception:
+                    rel_path = item.name
+                try:
+                    size = item.stat().st_size
+                except Exception:
+                    size = None
+                output_files.append(self._sanitize_payload({"path": rel_path, "size": size}))
+
+        return {
+            "status": "ok",
+            "connected": self.mcp_session is not None,
+            "tabs_state": tabs_state,
+            "snapshot": snapshot,
+            "output_dir": self._sanitize_text(str(output_dir), max_chars=4000),
+            "output_dir_exists": output_dir.exists(),
+            "output_files": output_files,
+        }
+
     async def _verify_step(self, tool_name: str, args: dict, before_state: dict, call_outcome: dict):
         if not call_outcome["ok"]:
             return {"ok": False, "reason": call_outcome.get("error", "Tool failed"), "details": {}}
@@ -255,31 +318,30 @@ class MCPManager:
         payload = {
             "status": "ok" if (outcome.get("ok") and verification.get("ok")) else "failed",
             "tool": tool_name,
-            "args": args,
+            "args": MCPManager._sanitize_payload(args),
             "attempts": attempt_count,
             "recovered": recovered,
-            "verification": verification,
-            "result": outcome.get("text", ""),
-            "error": outcome.get("error"),
+            "verification": MCPManager._sanitize_payload(verification, max_chars=40000),
+            "result": MCPManager._sanitize_text(outcome.get("text", ""), max_chars=40000),
+            "error": MCPManager._sanitize_text(outcome.get("error"), max_chars=4000),
         }
-        return json.dumps(payload, ensure_ascii=True)
+        return MCPManager._json_response(payload, max_chars=40000)
 
     async def browser_tabs_list(self, _kwargs_dict=None):
         state = await self._list_tabs_state()
         if not state["ok"]:
-            return json.dumps({"status": "failed", "error": state["error"]}, ensure_ascii=True)
-        return json.dumps(
+            return self._json_response({"status": "failed", "error": state["error"]})
+        return self._json_response(
             {
                 "status": "ok",
                 "tabs": state["tabs"],
                 "current": state["current"],
-            },
-            ensure_ascii=True,
+            }
         )
 
     async def browser_tab_select(self, kwargs_dict):
         if self.mcp_session is None:
-            return json.dumps({"status": "failed", "error": "MCP session is not connected."}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": "MCP session is not connected."})
 
         kwargs = kwargs_dict or {}
         target_index = kwargs.get("index")
@@ -288,7 +350,7 @@ class MCPManager:
 
         tabs_state = await self._list_tabs_state()
         if not tabs_state["ok"]:
-            return json.dumps({"status": "failed", "error": tabs_state["error"]}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": tabs_state["error"]})
 
         tabs = tabs_state["tabs"]
         target = None
@@ -296,7 +358,7 @@ class MCPManager:
             try:
                 requested = int(target_index)
             except Exception:
-                return json.dumps({"status": "failed", "error": f"Invalid index: {target_index}"}, ensure_ascii=True)
+                return self._json_response({"status": "failed", "error": f"Invalid index: {target_index}"})
             target = next((tab for tab in tabs if tab["index"] == requested), None)
         else:
             for tab in tabs:
@@ -307,26 +369,22 @@ class MCPManager:
                     break
 
         if target is None:
-            return json.dumps(
-                {"status": "failed", "error": "No matching tab found.", "tabs": tabs},
-                ensure_ascii=True,
-            )
+            return self._json_response({"status": "failed", "error": "No matching tab found.", "tabs": tabs})
 
         selected = await self._select_tab(target["index"])
         if not selected["ok"]:
-            return json.dumps({"status": "failed", "error": selected["error"]}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": selected["error"]})
 
         final_state = await self._list_tabs_state()
-        return json.dumps(
-            {"status": "ok", "selected_index": target["index"], "current": final_state.get("current"), "tabs": final_state.get("tabs", [])},
-            ensure_ascii=True,
+        return self._json_response(
+            {"status": "ok", "selected_index": target["index"], "current": final_state.get("current"), "tabs": final_state.get("tabs", [])}
         )
 
     async def browser_close_blank_tabs(self, _kwargs_dict=None):
         state = await self._cleanup_blank_tabs()
         if not state["ok"]:
-            return json.dumps({"status": "failed", "error": state["error"]}, ensure_ascii=True)
-        return json.dumps({"status": "ok", "tabs": state["tabs"], "current": state["current"]}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": state["error"]})
+        return self._json_response({"status": "ok", "tabs": state["tabs"], "current": state["current"]})
 
     async def init_mcp_client(self, agent_tools, available_functions, register_or_update_tool_schema_fn):
         if self.mcp_session is not None:
@@ -350,8 +408,8 @@ class MCPManager:
                 "PLAYWRIGHT_MCP_OWNER": "python",
                 "PLAYWRIGHT_MCP_OWNER_FILE": str(owner_file),
                 "PLAYWRIGHT_MCP_PERSIST_PROFILE": "true",
-                "PLAYWRIGHT_MCP_SAVE_SESSION": "false",
-                "PLAYWRIGHT_MCP_SAVE_TRACE": "false",
+                "PLAYWRIGHT_MCP_SAVE_SESSION": os.environ.get("PLAYWRIGHT_MCP_SAVE_SESSION", "false"),
+                "PLAYWRIGHT_MCP_SAVE_TRACE": os.environ.get("PLAYWRIGHT_MCP_SAVE_TRACE", "false"),
                 "PLAYWRIGHT_MCP_OUTPUT_MODE": "stdout",
                 "PLAYWRIGHT_MCP_SNAPSHOT_MODE": "incremental",
                 "PLAYWRIGHT_MCP_CONSOLE_LEVEL": "error",

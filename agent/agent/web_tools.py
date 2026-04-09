@@ -5,6 +5,10 @@ import html as html_lib
 import urllib.request
 import urllib.error
 from urllib.parse import urlparse
+try:
+    from runtime_utils import redact_sensitive_data as _redact_sensitive_data
+except Exception:
+    from .runtime_utils import redact_sensitive_data as _redact_sensitive_data
 
 
 class WebManager:
@@ -49,6 +53,10 @@ class WebManager:
             return ""
         return re.sub(r"\s+", " ", html_lib.unescape(match.group(1))).strip()
 
+    @staticmethod
+    def _json_response(payload, max_chars=50000):
+        return json.dumps(_redact_sensitive_data(payload, max_chars=max_chars), ensure_ascii=True)
+
     async def web_fetch(self, kwargs_dict):
         kwargs = kwargs_dict or {}
         url = str(kwargs.get("url", "")).strip()
@@ -66,13 +74,13 @@ class WebManager:
         max_chars = max(500, min(max_chars, 500000))
 
         if not url:
-            return json.dumps({"status": "failed", "error": "url is required"}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": "url is required"})
         if not re.match(r"^https?://", url, flags=re.IGNORECASE):
-            return json.dumps({"status": "failed", "error": "Only http/https URLs are supported."}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": "Only http/https URLs are supported."})
         if headers_obj is None:
             headers_obj = {}
         if not isinstance(headers_obj, dict):
-            return json.dumps({"status": "failed", "error": "headers must be an object"}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": "headers must be an object"})
 
         auth_obj = kwargs.get("auth", {})
         if isinstance(auth_obj, dict):
@@ -94,13 +102,12 @@ class WebManager:
                 )
                 auth_mode = "oauth_profile"
             except Exception as e:
-                return json.dumps(
+                return self._json_response(
                     {
                         "status": "failed",
                         "error": f"OAuth token resolve failed: {e}",
                         "oauth_profile": oauth_profile,
-                    },
-                    ensure_ascii=True,
+                    }
                 )
         elif bearer_token:
             auth_mode = "bearer"
@@ -108,19 +115,18 @@ class WebManager:
         try:
             parsed = urlparse(url)
         except Exception:
-            return json.dumps({"status": "failed", "error": "Invalid URL format.", "url": url}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": "Invalid URL format.", "url": url})
 
         hostname = parsed.hostname or ""
         private_fetch_allowed = allow_private_hosts or self._to_bool(os.getenv(self.web_fetch_allow_private_env, "0"), False)
         if not private_fetch_allowed and self._is_private_or_local_host(hostname):
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "blocked",
                     "error": "Blocked private/local host fetch by SSRF policy.",
                     "url": url,
                     "host": hostname,
-                },
-                ensure_ascii=True,
+                }
             )
 
         try:
@@ -134,7 +140,7 @@ class WebManager:
                 if not key_text:
                     continue
                 if any(ch in key_text for ch in ["\n", "\r", ":"]) or any(ch in value_text for ch in ["\n", "\r"]):
-                    return json.dumps({"status": "failed", "error": "Invalid header key/value."}, ensure_ascii=True)
+                    return self._json_response({"status": "failed", "error": "Invalid header key/value."})
                 request_headers[key_text] = value_text
             if bearer_token and "Authorization" not in request_headers:
                 request_headers["Authorization"] = f"Bearer {bearer_token}"
@@ -151,7 +157,7 @@ class WebManager:
                 text = self._strip_html_to_text(body)[:max_chars] if extract_text else ""
                 mask_fn = getattr(self.oauth_manager, "mask_token", None)
                 token_preview = mask_fn(bearer_token) if callable(mask_fn) else ""
-                return json.dumps(
+                return self._json_response(
                     {
                         "status": "ok",
                         "url": response.geturl(),
@@ -166,26 +172,24 @@ class WebManager:
                             "token_preview": token_preview,
                         },
                     },
-                    ensure_ascii=True,
+                    max_chars=max_chars,
                 )
         except urllib.error.HTTPError as e:
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "failed",
                     "error": f"HTTPError: {e.code}",
                     "url": url,
                     "reason": str(e),
-                },
-                ensure_ascii=True,
+                }
             )
         except urllib.error.URLError as e:
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "failed",
                     "error": f"URLError: {e.reason}",
                     "url": url,
-                },
-                ensure_ascii=True,
+                }
             )
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e), "url": url}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e), "url": url})

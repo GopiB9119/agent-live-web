@@ -141,15 +141,27 @@
               "navigate",
               "click",
               "type",
+              "fill",
               "press",
               "select",
+              "hover",
+              "search",
               "wait",
               "check",
               "extract",
               "scroll",
               "download",
               "upload",
-              "screenshot"
+              "screenshot",
+              "snapshot",
+              "back",
+              "forward",
+              "refresh",
+              "delete",
+              "focus",
+              "clear",
+              "doubleClick",
+              "rightClick"
             ]
           },
           "target": {

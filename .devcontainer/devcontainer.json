@@ -1,1 +1,31 @@
-{"image":"mcr.microsoft.com/devcontainers/universal:2"}
+{
+  "name": "agent-live-web",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    }
+  },
+  "postCreateCommand": "npm install && pip install -r agent/agent/requirements.txt",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "github.copilot",
+        "github.copilot-chat",
+        "ms-python.python",
+        "ms-playwright.playwright"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python"
+      }
+    }
+  },
+  "forwardPorts": [16686, 4318],
+  "portsAttributes": {
+    "16686": { "label": "Jaeger UI" },
+    "4318": { "label": "OTLP Collector" }
+  }
+}

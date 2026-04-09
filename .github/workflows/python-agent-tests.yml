@@ -43,6 +43,12 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r agent/agent/requirements.txt
 
+      - name: Run JS syntax check
+        run: npm run check
+
+      - name: Run JS unit tests
+        run: npm run test:js:unit
+
       - name: Run Python agent unit tests
         run: python -m unittest discover -s agent/agent/tests -p "test_*.py" -v
 

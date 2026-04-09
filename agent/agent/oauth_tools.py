@@ -5,6 +5,10 @@ import time
 import urllib.request
 import urllib.error
 from urllib.parse import urlparse, urlencode
+try:
+    from runtime_utils import redact_sensitive_data as _redact_sensitive_data
+except Exception:
+    from .runtime_utils import redact_sensitive_data as _redact_sensitive_data
 
 
 class OAuthManager:
@@ -27,6 +31,10 @@ class OAuthManager:
         if len(value) <= (keep_prefix + keep_suffix):
             return "*" * len(value)
         return f"{value[:keep_prefix]}...{value[-keep_suffix:]}"
+
+    @staticmethod
+    def _json_response(payload, max_chars=50000):
+        return json.dumps(_redact_sensitive_data(payload, max_chars=max_chars), ensure_ascii=True)
 
     @staticmethod
     def profile_from_kwargs(kwargs):
@@ -170,20 +178,20 @@ class OAuthManager:
         kwargs = kwargs_dict or {}
         profile_name = str(kwargs.get("profile_name", "")).strip()
         if not profile_name:
-            return json.dumps({"status": "failed", "error": "profile_name is required"}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": "profile_name is required"})
 
         try:
             profile = self.profile_from_kwargs(kwargs)
             if not profile.get("token_url"):
-                return json.dumps({"status": "failed", "error": "token_url is required"}, ensure_ascii=True)
+                return self._json_response({"status": "failed", "error": "token_url is required"})
             if not profile.get("client_id"):
-                return json.dumps({"status": "failed", "error": "client_id is required"}, ensure_ascii=True)
+                return self._json_response({"status": "failed", "error": "client_id is required"})
             if not profile.get("client_secret"):
-                return json.dumps({"status": "failed", "error": "client_secret is required"}, ensure_ascii=True)
+                return self._json_response({"status": "failed", "error": "client_secret is required"})
 
             self.profile_store[profile_name] = profile
             self.token_cache.pop(self.cache_key(profile_name, profile), None)
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "ok",
                     "profile_name": profile_name,
@@ -194,10 +202,9 @@ class OAuthManager:
                     "audience": profile.get("audience", ""),
                     "client_secret_set": bool(profile.get("client_secret")),
                 },
-                ensure_ascii=True,
             )
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})
 
     async def oauth_get_token(self, kwargs_dict):
         kwargs = kwargs_dict or {}
@@ -212,16 +219,15 @@ class OAuthManager:
             if profile_name:
                 profile = self.profile_store.get(profile_name)
                 if not isinstance(profile, dict):
-                    return json.dumps({"status": "failed", "error": f"OAuth profile not found: {profile_name}"}, ensure_ascii=True)
+                    return self._json_response({"status": "failed", "error": f"OAuth profile not found: {profile_name}"})
             else:
                 profile = direct_profile
                 if not profile.get("token_url") or not profile.get("client_id") or not profile.get("client_secret"):
-                    return json.dumps(
+                    return self._json_response(
                         {
                             "status": "failed",
                             "error": "Provide profile_name or direct token_url/client_id/client_secret.",
                         },
-                        ensure_ascii=True,
                     )
 
             cache_key = self.cache_key(profile_name, profile)
@@ -236,8 +242,10 @@ class OAuthManager:
                         "token_type": "Bearer",
                     }
                     if include_access_token:
-                        payload["access_token"] = cached
-                    return json.dumps(payload, ensure_ascii=True)
+                        payload["access_token_included"] = False
+                        payload["raw_token_output_blocked"] = True
+                        payload["guidance"] = "Raw access token output is disabled. Use oauth_profile-based tools instead."
+                    return self._json_response(payload)
 
             token_payload = self.fetch_token(profile)
             access_token = str(token_payload.get("access_token", "")).strip()
@@ -260,21 +268,22 @@ class OAuthManager:
                 "expires_at_unix": int(expires_at),
             }
             if include_access_token:
-                payload["access_token"] = access_token
-            return json.dumps(payload, ensure_ascii=True)
+                payload["access_token_included"] = False
+                payload["raw_token_output_blocked"] = True
+                payload["guidance"] = "Raw access token output is disabled. Use oauth_profile-based tools instead."
+            return self._json_response(payload)
         except urllib.error.HTTPError as e:
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "failed",
                     "error": f"HTTPError: {e.code}",
                     "reason": str(e),
-                },
-                ensure_ascii=True,
+                }
             )
         except urllib.error.URLError as e:
-            return json.dumps({"status": "failed", "error": f"URLError: {e.reason}"}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": f"URLError: {e.reason}"})
         except Exception as e:
-            return json.dumps({"status": "failed", "error": str(e)}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": str(e)})
 
     async def oauth_profiles(self, kwargs_dict=None):
         kwargs = kwargs_dict or {}
@@ -283,17 +292,16 @@ class OAuthManager:
 
         if action in {"delete", "remove"}:
             if not profile_name:
-                return json.dumps({"status": "failed", "error": "profile_name is required for delete action."}, ensure_ascii=True)
+                return self._json_response({"status": "failed", "error": "profile_name is required for delete action."})
             removed_profile = self.profile_store.pop(profile_name, None)
             self.token_cache.pop(self.cache_key(profile_name, removed_profile or {}), None)
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "ok",
                     "action": "delete",
                     "profile_name": profile_name,
                     "deleted": bool(removed_profile),
-                },
-                ensure_ascii=True,
+                }
             )
 
         if action == "clear":
@@ -301,14 +309,13 @@ class OAuthManager:
             token_count = len(self.token_cache)
             self.profile_store.clear()
             self.token_cache.clear()
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "ok",
                     "action": "clear",
                     "profiles_removed": profile_count,
                     "tokens_removed": token_count,
-                },
-                ensure_ascii=True,
+                }
             )
 
         rows = []
@@ -331,12 +338,11 @@ class OAuthManager:
                 }
             )
 
-        return json.dumps(
+        return self._json_response(
             {
                 "status": "ok",
                 "action": "list",
                 "count": len(rows),
                 "profiles": rows,
-            },
-            ensure_ascii=True,
+            }
         )

@@ -1,8 +1,10 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from mcp_tools import MCPManager
@@ -74,6 +76,43 @@ class MCPManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tabs["status"], "failed")
         selected = json.loads(await self.manager.browser_tab_select({"index": 0}))
         self.assertEqual(selected["status"], "failed")
+
+    async def test_capture_debug_artifacts_collects_snapshot_and_output_listing(self):
+        output_dir = Path(self.tmp.name) / "mcp-output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        trace_file = output_dir / "trace.zip"
+        trace_file.write_bytes(b"trace-bytes")
+
+        async def fake_list_tabs_state():
+            return {
+                "ok": True,
+                "error": None,
+                "tabs": [{"index": 0, "current": True, "title": "Example", "url": "https://example.com?token=abc123"}],
+                "current": {"index": 0, "current": True, "title": "Example", "url": "https://example.com?token=abc123"},
+                "raw": "- 0: (current) [Example](https://example.com?token=abc123)",
+            }
+
+        async def fake_call(tool_name, args=None):
+            self.assertEqual(tool_name, "browser_snapshot")
+            return {"ok": True, "text": "# Page snapshot\nAuthorization=secret-token", "error": None}
+
+        self.manager._list_tabs_state = fake_list_tabs_state
+        self.manager._call_mcp_tool_raw = fake_call
+        self.manager.mcp_session = object()
+
+        with patch.dict(os.environ, {"PLAYWRIGHT_MCP_OUTPUT_DIR": str(output_dir)}, clear=False):
+            artifacts = await self.manager.capture_debug_artifacts(include_snapshot=True)
+
+        self.assertEqual(artifacts["status"], "ok")
+        self.assertTrue(artifacts["connected"])
+        self.assertTrue(artifacts["tabs_state"]["ok"])
+        self.assertTrue(artifacts["snapshot"]["ok"])
+        self.assertIn("Page snapshot", artifacts["snapshot"]["text"])
+        self.assertIn("Authorization=[REDACTED]", artifacts["snapshot"]["text"])
+        self.assertNotIn("secret-token", artifacts["snapshot"]["text"])
+        self.assertIn("token=[REDACTED]", artifacts["tabs_state"]["current"]["url"])
+        self.assertEqual(artifacts["output_files"][0]["path"], "trace.zip")
+        self.assertEqual(artifacts["output_files"][0]["size"], len(b"trace-bytes"))
 
 
 if __name__ == "__main__":

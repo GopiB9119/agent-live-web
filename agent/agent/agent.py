@@ -1,4 +1,3 @@
-import os
 import json
 import asyncio
 import re
@@ -6,115 +5,78 @@ import inspect
 import difflib
 from pathlib import Path
 from datetime import datetime
-from dotenv import load_dotenv
-from openai import AzureOpenAI, OpenAI
 from tools import AGENT_TOOLS, AVAILABLE_FUNCTIONS, init_mcp_client, shutdown_mcp_client
-
-# Load environment variables
-load_dotenv()
-
-
-def _env_flag(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name, "true" if default else "false")
-    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, str(default)))
-    except Exception:
-        return default
-
-
-MAX_ITERATIONS = max(2, min(_env_int("AGENT_MAX_ITERATIONS", 10), 40))
-MAX_HISTORY_MESSAGES = max(20, min(_env_int("AGENT_MAX_HISTORY_MESSAGES", 60), 200))
-TOOL_TIMEOUT_SEC = float(os.environ.get("AGENT_TOOL_TIMEOUT_SEC", "180"))
-MEMORY_AUTO_LOG = _env_flag("AGENT_MEMORY_AUTO_LOG", False)
-MEMORY_PRIVATE_SESSION = _env_flag("AGENT_PRIVATE_SESSION", True)
-MAX_MEMORY_LOG_CHARS = max(600, min(_env_int("AGENT_MEMORY_LOG_MAX_CHARS", 4000), 50000))
-MEMORY_AUTO_RECALL = _env_flag("AGENT_MEMORY_AUTO_RECALL", True)
-MEMORY_RECALL_TOP_K = max(1, min(_env_int("AGENT_MEMORY_RECALL_TOP_K", 4), 12))
-MEMORY_RECALL_DAYS_BACK = max(1, min(_env_int("AGENT_MEMORY_RECALL_DAYS_BACK", 30), 180))
-MEMORY_RECALL_MAX_CHARS = max(600, min(_env_int("AGENT_MEMORY_RECALL_MAX_CHARS", 3500), 30000))
-SESSION_STATE_ENABLED = _env_flag("AGENT_SESSION_STATE_ENABLED", True)
-SESSION_STATE_MAX_MESSAGES = max(8, min(_env_int("AGENT_SESSION_STATE_MAX_MESSAGES", 80), 300))
-SESSION_STATE_FILE = Path(
-    os.environ.get(
-        "AGENT_SESSION_STATE_FILE",
-        str(Path(__file__).resolve().parents[2] / ".agent-state" / "last_session.json"),
+try:
+    from config import (
+        client, MODEL, MODEL_PROVIDER, MODEL_SETUP_ERROR,
+        MAX_ITERATIONS, MAX_HISTORY_MESSAGES, TOOL_TIMEOUT_SEC,
+        MEMORY_AUTO_LOG, MEMORY_PRIVATE_SESSION, MAX_MEMORY_LOG_CHARS,
+        MEMORY_AUTO_RECALL, MEMORY_RECALL_TOP_K, MEMORY_RECALL_DAYS_BACK,
+        MEMORY_RECALL_MAX_CHARS, SESSION_STATE_ENABLED, SESSION_STATE_MAX_MESSAGES,
+        SESSION_STATE_MAX_TURNS, TURN_GROUNDING_MAX_CHARS, SESSION_STATE_FILE,
+        RUNTIME_EXECUTION_GUIDE,
     )
-)
-
-
-def _create_client_and_model():
-    provider_pref = str(os.environ.get("AGENT_PROVIDER", "auto")).strip().lower()
-    openai_key = str(os.environ.get("OPENAI_API_KEY", "")).strip()
-    azure_key = str(os.environ.get("azure_key", "")).strip()
-    azure_endpoint = str(os.environ.get("azure_endpoint_uri", "")).strip()
-
-    wants_openai = provider_pref in {"openai", "codex"} or (provider_pref == "auto" and openai_key)
-    if wants_openai:
-        if not openai_key:
-            return None, str(os.environ.get("AGENT_MODEL", "codex-5.3")), "openai", "OPENAI_API_KEY is missing."
-        model_name = str(os.environ.get("AGENT_MODEL", os.environ.get("OPENAI_MODEL", "codex-5.3"))).strip() or "codex-5.3"
-        return OpenAI(api_key=openai_key), model_name, "openai", ""
-
-    if not azure_key or not azure_endpoint:
-        missing = []
-        if not azure_key:
-            missing.append("azure_key")
-        if not azure_endpoint:
-            missing.append("azure_endpoint_uri")
-        missing_text = ", ".join(missing) if missing else "azure credentials"
-        return None, str(os.environ.get("azure_deployment_name", "gpt-4o")), "azure", f"Missing {missing_text}."
-
-    model_name = str(os.environ.get("AGENT_MODEL", os.environ.get("azure_deployment_name", "gpt-4o"))).strip() or "gpt-4o"
-    return (
-        AzureOpenAI(
-            api_key=azure_key,
-            api_version=os.environ.get("azure_api_version", "2024-12-01-preview"),
-            azure_endpoint=azure_endpoint,
-        ),
-        model_name,
-        "azure",
-        "",
+except Exception:
+    from .config import (
+        client, MODEL, MODEL_PROVIDER, MODEL_SETUP_ERROR,
+        MAX_ITERATIONS, MAX_HISTORY_MESSAGES, TOOL_TIMEOUT_SEC,
+        MEMORY_AUTO_LOG, MEMORY_PRIVATE_SESSION, MAX_MEMORY_LOG_CHARS,
+        MEMORY_AUTO_RECALL, MEMORY_RECALL_TOP_K, MEMORY_RECALL_DAYS_BACK,
+        MEMORY_RECALL_MAX_CHARS, SESSION_STATE_ENABLED, SESSION_STATE_MAX_MESSAGES,
+        SESSION_STATE_MAX_TURNS, TURN_GROUNDING_MAX_CHARS, SESSION_STATE_FILE,
+        RUNTIME_EXECUTION_GUIDE,
+    )
+try:
+    from runtime_utils import redact_sensitive_data as _redact_sensitive_data, redact_sensitive_text as _runtime_redact_sensitive_text
+except Exception:
+    from .runtime_utils import redact_sensitive_data as _redact_sensitive_data, redact_sensitive_text as _runtime_redact_sensitive_text
+try:
+    from runtime_utils import (
+        build_execution_grounding_note as _build_execution_grounding_note,
+        build_response_override as _build_response_override,
+        build_turn_record as _build_turn_record,
+        collect_recent_next_steps as _collect_recent_next_steps,
+        reconcile_final_answer_with_grounding_metadata as _reconcile_final_answer_with_grounding_metadata,
+        format_last_turn_report as _format_last_turn_report,
+        format_session_resume_note as _format_session_resume_note,
+        summarize_tool_outcome as _summarize_tool_outcome,
+    )
+except Exception:
+    from .runtime_utils import (
+        build_execution_grounding_note as _build_execution_grounding_note,
+        build_response_override as _build_response_override,
+        build_turn_record as _build_turn_record,
+        collect_recent_next_steps as _collect_recent_next_steps,
+        reconcile_final_answer_with_grounding_metadata as _reconcile_final_answer_with_grounding_metadata,
+        format_last_turn_report as _format_last_turn_report,
+        format_session_resume_note as _format_session_resume_note,
+        summarize_tool_outcome as _summarize_tool_outcome,
     )
 
-
-client, MODEL, MODEL_PROVIDER, MODEL_SETUP_ERROR = _create_client_and_model()
 if client is None:
     print(f"WARNING: model client is not configured ({MODEL_PROVIDER}). {MODEL_SETUP_ERROR}")
     print("Set AGENT_PROVIDER=openai with OPENAI_API_KEY and AGENT_MODEL (e.g. codex-5.3),")
     print("or configure azure_key + azure_endpoint_uri + azure_deployment_name.")
-SENSITIVE_MEMORY_PATTERNS = [
-    re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._\-]{12,}"),
-    re.compile(r"(?i)\b(api[_-]?key|token|secret|password|passwd|pwd|cookie|authorization)\s*[:=]\s*([^\s,;]+)"),
-    re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
-    re.compile(r"\bAIza[0-9A-Za-z\-_]{20,}\b"),
-]
-
-RUNTIME_EXECUTION_GUIDE = (
-    "[Runtime execution guide]\n"
-    "- For broad goals, prefer task_autopilot first to map files and next actions.\n"
-    "- For deterministic multi-step execution, use workflow_execute with explicit per-step verification.\n"
-    "- For edits, prefer fs tools and verify with fs_read/fs_search before final response.\n"
-    "- When tool output is ambiguous, call the tool_catalog or a validation tool instead of guessing."
-)
 
 
 def _redact_for_memory(value: str) -> str:
-    text = str(value or "")
-    for pattern in SENSITIVE_MEMORY_PATTERNS:
-        if pattern.pattern.lower().startswith("(?i)\\b(api"):
-            text = pattern.sub(lambda m: f"{m.group(1)}=[REDACTED]", text)
-        elif pattern.pattern.lower().startswith("(?i)\\b(bearer"):
-            text = pattern.sub("Bearer [REDACTED]", text)
-        else:
-            text = pattern.sub("[REDACTED]", text)
-    if len(text) > MAX_MEMORY_LOG_CHARS:
-        text = text[:MAX_MEMORY_LOG_CHARS] + "\n...[TRUNCATED]"
-    return text
+    return _runtime_redact_sensitive_text(value, max_chars=MAX_MEMORY_LOG_CHARS)
+
+
+def _sanitize_for_log(value):
+    return _redact_sensitive_data(value, max_chars=MAX_MEMORY_LOG_CHARS)
+
+
+def _load_session_state_payload():
+    if not SESSION_STATE_ENABLED:
+        return {}
+    try:
+        if not SESSION_STATE_FILE.exists():
+            return {}
+        payload = json.loads(SESSION_STATE_FILE.read_text(encoding="utf-8", errors="replace"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
 
 
 def _load_system_prompt() -> str:
@@ -349,26 +311,50 @@ def _normalize_saved_chat_message(item):
 
 
 def _load_session_state_messages():
-    if not SESSION_STATE_ENABLED:
+    payload = _load_session_state_payload()
+    stored = payload.get("messages", []) if isinstance(payload, dict) else []
+    if not isinstance(stored, list):
         return []
-    try:
-        if not SESSION_STATE_FILE.exists():
-            return []
-        payload = json.loads(SESSION_STATE_FILE.read_text(encoding="utf-8", errors="replace"))
-        stored = payload.get("messages", [])
-        if not isinstance(stored, list):
-            return []
-        normalized = []
-        for item in stored[-SESSION_STATE_MAX_MESSAGES:]:
-            valid = _normalize_saved_chat_message(item)
-            if valid:
-                normalized.append(valid)
-        return normalized
-    except Exception:
-        return []
+    normalized = []
+    for item in stored[-SESSION_STATE_MAX_MESSAGES:]:
+        valid = _normalize_saved_chat_message(item)
+        if valid:
+            normalized.append(valid)
+    return normalized
 
 
-def _save_session_state(messages):
+def _load_session_state_turns():
+    payload = _load_session_state_payload()
+    stored = payload.get("recent_turns", []) if isinstance(payload, dict) else []
+    if not isinstance(stored, list):
+        return []
+
+    normalized = []
+    for item in stored[-SESSION_STATE_MAX_TURNS:]:
+        if not isinstance(item, dict):
+            continue
+        record = _redact_sensitive_data(item, max_chars=MAX_MEMORY_LOG_CHARS)
+        user_prompt = str(record.get("user_prompt", "")).strip()
+        developer_summary = str(record.get("developer_summary", "")).strip()
+        next_steps = record.get("next_steps", []) if isinstance(record.get("next_steps"), list) else []
+        tool_summaries = record.get("tool_summaries", []) if isinstance(record.get("tool_summaries"), list) else []
+        if not user_prompt and not developer_summary:
+            continue
+        normalized.append(
+            {
+                "saved_at": str(record.get("saved_at", "")).strip(),
+                "user_prompt": user_prompt,
+                "developer_summary": developer_summary,
+                "completed_tools": int(record.get("completed_tools", 0) or 0),
+                "failed_tools": int(record.get("failed_tools", 0) or 0),
+                "next_steps": next_steps[:5],
+                "tool_summaries": tool_summaries[:8],
+            }
+        )
+    return normalized
+
+
+def _save_session_state(messages, recent_turns=None):
     if not SESSION_STATE_ENABLED:
         return
     try:
@@ -379,11 +365,18 @@ def _save_session_state(messages):
                 valid["content"] = _redact_for_memory(valid["content"])
                 trimmed.append(valid)
         trimmed = trimmed[-SESSION_STATE_MAX_MESSAGES:]
+        sanitized_turns = []
+        for item in (recent_turns or [])[-SESSION_STATE_MAX_TURNS:]:
+            if not isinstance(item, dict):
+                continue
+            sanitized_turns.append(_redact_sensitive_data(item, max_chars=MAX_MEMORY_LOG_CHARS))
         payload = {
             "saved_at": datetime.now().isoformat(timespec="seconds"),
             "model": MODEL,
             "message_count": len(trimmed),
             "messages": trimmed,
+            "recent_turn_count": len(sanitized_turns),
+            "recent_turns": sanitized_turns,
         }
         SESSION_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         SESSION_STATE_FILE.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
@@ -544,11 +537,17 @@ def _format_runtime_status(messages):
     session_file_exists = SESSION_STATE_FILE.exists()
     saved_at = "n/a"
     saved_count = 0
+    recent_turn_count = 0
+    last_turn_summary = "n/a"
     if session_file_exists:
         try:
-            payload = json.loads(SESSION_STATE_FILE.read_text(encoding="utf-8", errors="replace"))
+            payload = _load_session_state_payload()
             saved_at = str(payload.get("saved_at", "n/a"))
             saved_count = int(payload.get("message_count", 0) or 0)
+            recent_turn_count = int(payload.get("recent_turn_count", 0) or 0)
+            recent_turns = payload.get("recent_turns", []) if isinstance(payload.get("recent_turns"), list) else []
+            if recent_turns:
+                last_turn_summary = str(recent_turns[-1].get("developer_summary", "n/a"))[:220] or "n/a"
         except Exception:
             saved_at = "unreadable"
 
@@ -565,6 +564,8 @@ def _format_runtime_status(messages):
         f"- session_state_enabled: {SESSION_STATE_ENABLED}",
         f"- session_state_file: {SESSION_STATE_FILE}",
         f"- session_state_exists: {session_file_exists} (saved_at={saved_at}, message_count={saved_count})",
+        f"- session_recent_turns: {recent_turn_count}",
+        f"- last_turn_summary: {last_turn_summary}",
         f"- loaded_messages: {len(messages)} (system={role_counts['system']}, user={role_counts['user']}, assistant={role_counts['assistant']}, tool={role_counts['tool']})",
         f"- callable_tools: {len(AVAILABLE_FUNCTIONS)}",
         f"- mcp_browser_tools: {len(mcp_browser_tools)}",
@@ -577,6 +578,8 @@ def _help_text():
         "Commands:\n"
         "- /help: show available commands\n"
         "- /status: show runtime status, memory flags, and session continuity details\n"
+        "- /last: show the last completed turn with verified execution and next steps\n"
+        "- /next: show the currently remembered next steps\n"
         "- /doctor: run agent/tool architecture health report\n"
         "- /save: save current conversation state immediately\n"
         "- /reindex: rebuild memory vector index\n"
@@ -629,9 +632,15 @@ async def run_agent():
         print("  [Memory] Loaded startup memory context.")
 
     resumed_messages = _load_session_state_messages()
+    recent_turns = _load_session_state_turns()
     if resumed_messages:
         messages.extend(resumed_messages)
         print(f"  [Session] Loaded {len(resumed_messages)} messages from previous run.")
+    if recent_turns:
+        resume_note = _format_session_resume_note(recent_turns, max_chars=TURN_GROUNDING_MAX_CHARS)
+        if resume_note:
+            messages.append({"role": "system", "content": resume_note})
+            print(f"  [Session] Loaded {len(recent_turns)} recent turn records.")
 
     print("\n" + "="*50)
     print("Agent is ready! Type '/help' for commands, or 'exit'/'quit' to end the chat.")
@@ -660,6 +669,19 @@ async def run_agent():
                     print("\n" + _help_text() + "\n")
                 elif normalized_lower == "/status":
                     print("\n" + _format_runtime_status(messages) + "\n")
+                elif normalized_lower in {"/last", "/recent"}:
+                    report = _format_last_turn_report(recent_turns, max_chars=TURN_GROUNDING_MAX_CHARS)
+                    if report:
+                        print("\n" + report + "\n")
+                    else:
+                        print("\n[Session] No saved completed turn is available yet.\n")
+                elif normalized_lower == "/next":
+                    next_steps = _collect_recent_next_steps(recent_turns, max_items=6)
+                    if next_steps:
+                        rendered = "\n".join(f"- {step}" for step in next_steps)
+                        print(f"\n[Next steps]\n{rendered}\n")
+                    else:
+                        print("\n[Next steps] No saved next steps are available yet.\n")
                 elif normalized_lower in {"/doctor", "/health"}:
                     health_tool = AVAILABLE_FUNCTIONS.get("agent_health_report")
                     if health_tool:
@@ -671,7 +693,7 @@ async def run_agent():
                     else:
                         print("\n[Health] agent_health_report tool is not available.\n")
                 elif normalized_lower in {"/save", "/checkpoint"}:
-                    _save_session_state(messages)
+                    _save_session_state(messages, recent_turns=recent_turns)
                     print("\n[Session] State saved.\n")
                 elif normalized_lower == "/reindex":
                     reindex_tool = AVAILABLE_FUNCTIONS.get("memory_reindex")
@@ -686,7 +708,11 @@ async def run_agent():
                 elif normalized_lower in {"/reset", "/clear"}:
                     base_messages, memory_context = await _build_base_messages()
                     messages = list(base_messages)
-                    _save_session_state(messages)
+                    if recent_turns:
+                        resume_note = _format_session_resume_note(recent_turns, max_chars=TURN_GROUNDING_MAX_CHARS)
+                        if resume_note:
+                            messages.append({"role": "system", "content": resume_note})
+                    _save_session_state(messages, recent_turns=recent_turns)
                     memory_msg = "with memory bootstrap loaded" if memory_context else "without memory bootstrap data"
                     print(f"\n[Session] Conversation reset complete ({memory_msg}).\n")
                 else:
@@ -711,6 +737,8 @@ async def run_agent():
 
             iteration = 0
             turn_completed = False
+            turn_tool_summaries = []
+            turn_record = None
             while iteration < MAX_ITERATIONS:
                 iteration += 1
 
@@ -727,6 +755,7 @@ async def run_agent():
                     api_error = f"API Error: {e}"
                     print(api_error)
                     messages.append({"role": "assistant", "content": api_error})
+                    turn_record = _build_turn_record(normalized_input, turn_tool_summaries, api_error)
                     turn_completed = True
                     break
 
@@ -744,10 +773,14 @@ async def run_agent():
                     for tool_call in tool_calls:
                         function_name = tool_call.function.name
                         function_args = _parse_tool_arguments(tool_call.function.arguments)
-                        print(f"  -> Calling '{function_name}' with arguments: {function_args}")
+                        print(f"  -> Calling '{function_name}' with arguments: {_sanitize_for_log(function_args)}")
 
                         function_response = await _execute_tool_call(function_name, function_args)
-                        print_resp = str(function_response)
+                        tool_summary = _summarize_tool_outcome(function_name, function_response)
+                        if tool_summary:
+                            turn_tool_summaries.append(tool_summary)
+                        sanitized_function_response = _redact_for_memory(function_response)
+                        print_resp = str(sanitized_function_response)
                         print(f"  <- Result from tool: {print_resp[:300]}{'...' if len(print_resp) > 300 else ''}")
 
                         # Append the tool's response to the conversation history
@@ -756,24 +789,55 @@ async def run_agent():
                                 "tool_call_id": tool_call.id,
                                 "role": "tool",
                                 "name": function_name,
-                                "content": str(function_response),
+                                "content": sanitized_function_response,
                             }
                         )
+
+                    grounding_note = _build_execution_grounding_note(
+                        normalized_input,
+                        turn_tool_summaries,
+                        max_chars=TURN_GROUNDING_MAX_CHARS,
+                    )
+                    if grounding_note:
+                        messages.append({"role": "system", "content": grounding_note})
+                        print("  [Grounding] Updated verified execution summary for this turn.")
 
                     # Continue loop so the model can consume tool outputs.
                     continue
 
                 # If there are no tool calls, the agent is finished and provides a standard text response
                 final_answer = response_message.content or ""
+                response_override = None
                 if (
                     final_answer
                     and _looks_like_local_access_request(normalized_input)
                     and _looks_like_local_access_refusal(final_answer)
                 ):
                     final_answer = await _auto_local_access_fallback(normalized_input)
+                    response_override = _build_response_override(
+                        "local-access-fallback",
+                        "The drafted answer claimed local workspace access was unavailable, so the runtime replaced it with a direct workspace inspection summary.",
+                        source="local-access-fallback",
+                        max_chars=TURN_GROUNDING_MAX_CHARS,
+                    )
                 if not final_answer.strip():
                     final_answer = "I completed execution but returned no text summary. Ask me to summarize the results."
+                reconciliation = _reconcile_final_answer_with_grounding_metadata(
+                    final_answer,
+                    turn_tool_summaries,
+                    max_chars=TURN_GROUNDING_MAX_CHARS,
+                )
+                final_answer = reconciliation.get("answer", "") if isinstance(reconciliation, dict) else str(reconciliation or "")
+                grounding_mismatch = reconciliation.get("grounding_mismatch") if isinstance(reconciliation, dict) else None
+                if response_override is None:
+                    response_override = grounding_mismatch
                 print(f"\nAgent: {final_answer}\n")
+                turn_record = _build_turn_record(
+                    normalized_input,
+                    turn_tool_summaries,
+                    final_answer,
+                    grounding_mismatch=response_override,
+                )
                 await _memory_log_event(
                     final_answer,
                     role="assistant",
@@ -790,8 +854,14 @@ async def run_agent():
                 timeout_msg = "Agent Error: Reached maximum internal steps without producing a final answer."
                 print(f"\n{timeout_msg} Continuing to next turn...\n")
                 messages.append({"role": "assistant", "content": timeout_msg})
+                turn_record = _build_turn_record(normalized_input, turn_tool_summaries, timeout_msg)
+
+            if turn_record:
+                recent_turns.append(turn_record)
+                recent_turns = recent_turns[-SESSION_STATE_MAX_TURNS:]
+                _save_session_state(messages, recent_turns=recent_turns)
     finally:
-        _save_session_state(messages)
+        _save_session_state(messages, recent_turns=locals().get("recent_turns", []))
 
 async def main():
     if client is not None:

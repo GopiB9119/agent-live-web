@@ -52,23 +52,19 @@ agent/agent/
 - Completed:
   - Added `agent_health_report` tool for schema/registry/size integrity checks.
   - Added interactive `/doctor` command in `agent.py`.
-  - Extracted OAuth internals into `agent/agent/oauth_tools.py` and kept API-compatible wrappers in `tools.py`.
-  - Extracted memory internals into `agent/agent/memory_tools.py` and kept API-compatible wrappers in `tools.py`.
-  - Extracted `web_fetch` internals into `agent/agent/web_tools.py` and kept API-compatible wrapper in `tools.py`.
-  - Extracted registry assembly helpers into `agent/agent/tooling/registry.py` and wired `tools.py` to consume them.
-  - Extracted MCP lifecycle + browser ownership/retry logic into `agent/agent/mcp_tools.py` with compatibility wrappers in `tools.py`.
-  - Extracted filesystem/code-analysis logic into `agent/agent/fs_tools.py` with compatibility wrappers in `tools.py`.
-  - Extracted command execution safety/runtime logic into `agent/agent/command_tools.py` with a compatibility wrapper in `tools.py`.
-  - Extracted planning/workflow orchestration into `agent/agent/workflow_tools.py` with compatibility wrappers in `tools.py`.
-  - Extracted diagnostics utilities (`tool_catalog`, `agent_health_report`) into `agent/agent/diagnostics_tools.py` with compatibility wrappers in `tools.py`.
-  - Moved `AGENT_TOOLS` schema source of truth into `agent/agent/tooling/schemas.py`; `tools.py` now imports schemas and focuses on runtime wiring/wrappers.
-  - Extracted shared workspace/security/env helpers into `agent/agent/runtime_utils.py` and rewired manager setup in `tools.py`.
-  - Added unit tests under `agent/agent/tests/` for `runtime_utils`, `workflow_tools`, and `diagnostics_tools` (13 tests, stdlib `unittest`).
-  - Expanded unit coverage for `web_tools`, `memory_tools`, and `mcp_tools` with mocked/local-only tests (total suite now 25 tests).
-  - Added CI workflow `.github/workflows/python-agent-tests.yml` to run Python agent tests on push/PR for `agent/**` changes.
-  - Started v5.2 live MCP integration coverage with opt-in tests in `agent/agent/tests/integration/test_mcp_live_integration.py`.
+  - Extracted all domain modules: `oauth_tools.py`, `memory_tools.py`, `web_tools.py`, `mcp_tools.py`, `fs_tools.py`, `command_tools.py`, `workflow_tools.py`, `diagnostics_tools.py`.
+  - Moved `AGENT_TOOLS` schema source of truth into `tooling/schemas.py`; `tools.py` now imports schemas and focuses on runtime wiring.
+  - Extracted shared workspace/security/env helpers into `runtime_utils.py`.
+  - Comprehensive unit test coverage: 87 Python tests across 11 test files + 3 opt-in live MCP integration tests.
+  - 44 JS unit tests covering EdgeSession actions, verification, redaction, NL parser chain, and response contracts.
+  - CI workflow runs full JS + Python test suite on push/PR.
+  - Security hardening: AST-based calculator (no eval), PowerShell metachar injection blocking, SSRF DNS resolution checks.
+  - `time.perf_counter()` for accurate workflow duration measurement.
+  - Project docs organized into `docs/` directory; root kept clean.
+  - `.devcontainer` configured for Codespaces onboarding.
 - Next:
-  - Add trace-attachment capture for failed live integration runs and wire a scheduled/nightly integration workflow.
+  - Wire a scheduled/nightly workflow for live MCP integration runs and artifact upload.
+  - Extract `agent.py` config/runtime helpers into `architecture/config.py` and `architecture/runtime.py` (Phase 2 target).
 
 ## Engineering Rules
 - One tool = one clear responsibility.
