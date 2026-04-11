@@ -4,7 +4,7 @@
 // Resolves the correct Python executable for this project.
 // Prefers the repo-local .venv, falls back to system python.
 
-const { execSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -21,7 +21,7 @@ function findPython() {
       if (candidate.includes(path.sep) || candidate.includes('/')) {
         if (!fs.existsSync(candidate)) continue;
       }
-      execSync(`${candidate} --version`, { stdio: 'pipe' });
+      execFileSync(candidate, ['--version'], { stdio: 'pipe' });
       return candidate;
     } catch (_) {
       continue;
@@ -44,7 +44,8 @@ if (args.length === 0) {
 }
 
 try {
-  execSync(`${pythonPath} ${args.join(' ')}`, { stdio: 'inherit' });
+  const result = spawnSync(pythonPath, args, { stdio: 'inherit', shell: false });
+  process.exit(result.status != null ? result.status : 1);
 } catch (error) {
-  process.exit(error.status || 1);
+  process.exit(1);
 }

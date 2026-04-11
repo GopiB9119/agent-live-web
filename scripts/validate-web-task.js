@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 'use strict';
 
-// Validates a web-task JSON file against the schema and reports issues.
+// Validates a web-task JSON file with structural checks and reports issues.
+// For full JSON Schema validation wire Ajv against .github/skills/web-works/web-task.schema.json.
 // Usage: node scripts/validate-web-task.js <path-to-task.json>
 
 const fs = require('fs');
-const path = require('path');
-
-const SCHEMA_PATH = path.join(__dirname, '..', '.github', 'skills', 'web-works', 'web-task.schema.json');
 
 const REQUIRED_FIELDS = ['version', 'task_id', 'mode', 'start_url', 'objective', 'success_criteria', 'side_effect_policy', 'steps', 'output'];
 const VALID_MODES = ['explore', 'extract', 'automate', 'qa'];
@@ -149,7 +147,7 @@ function validate(taskPath) {
     } else if (data.start_url) {
       try {
         const startHost = new URL(data.start_url).hostname;
-        const domainMatch = data.allowed_domains.some(d => startHost.includes(d));
+        const domainMatch = data.allowed_domains.some(d => startHost === d || startHost.endsWith('.' + d));
         if (!domainMatch) {
           warnings.push(`start_url host "${startHost}" is not in allowed_domains — agent may be blocked from navigating`);
         }
