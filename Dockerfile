@@ -28,7 +28,7 @@ COPY .env.example ./.env.example
 # Install Playwright browsers (Edge).
 # Set INSTALL_MSEDGE=false to skip (e.g. in CI environments that provide their own browser).
 ARG INSTALL_MSEDGE=true
-RUN if [ "$INSTALL_MSEDGE" = "true" ]; then npx playwright install --with-deps msedge; fi
+RUN if [ "$INSTALL_MSEDGE" = "true" ]; then npx playwright install --with-deps msedge; else echo "Skipping Edge installation (INSTALL_MSEDGE=false)"; fi
 
 # Set environment defaults
 ENV NODE_ENV=production \
