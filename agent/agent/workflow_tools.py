@@ -2,7 +2,12 @@ import inspect
 import json
 import re
 import time
+from datetime import datetime, timezone
 from pathlib import Path
+try:
+    from runtime_utils import redact_sensitive_data as _redact_sensitive_data, redact_sensitive_text as _redact_sensitive_text
+except Exception:
+    from .runtime_utils import redact_sensitive_data as _redact_sensitive_data, redact_sensitive_text as _redact_sensitive_text
 
 
 class WorkflowManager:
@@ -23,17 +28,130 @@ class WorkflowManager:
         self.fs_analyze_file_fn = fs_analyze_file_fn
 
     @staticmethod
+    def _sanitize_payload(value, max_chars=50000):
+        return _redact_sensitive_data(value, max_chars=max_chars)
+
+    @classmethod
+    def _json_response(cls, payload, max_chars=50000):
+        return json.dumps(cls._sanitize_payload(payload, max_chars=max_chars), ensure_ascii=True)
+
+    @staticmethod
+    def _timestamp_utc() -> str:
+        return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    @staticmethod
+    def _short_text(value, max_chars: int = 220) -> str:
+        text = _redact_sensitive_text(value, max_chars=max_chars)
+        return text.strip()
+
+    def _summarize_tool_result(self, tool_name: str, result: dict) -> str:
+        payload = self._sanitize_payload(result or {}, max_chars=2000)
+        verification = payload.get("verification") if isinstance(payload.get("verification"), dict) else {}
+        if verification.get("reason"):
+            return self._short_text(verification.get("reason"), max_chars=220)
+        if payload.get("error"):
+            return self._short_text(payload.get("error"), max_chars=220)
+        parts = []
+        for key in ["path", "url", "title", "count", "status_code", "selected_index", "executed_steps"]:
+            value = payload.get(key)
+            if value is None or value == "" or value == []:
+                continue
+            parts.append(f"{key}={value}")
+            if len(parts) >= 3:
+                break
+        if parts:
+            return "; ".join(parts)
+        return f"{tool_name or 'tool'} completed."
+
+    def _build_workflow_artifact(self, execution, overall_status: str, duration_ms: int, workflow_goal: str = ""):
+        ok_steps = 0
+        failed_entries = []
+        step_summaries = []
+        for entry in execution:
+            result = entry.get("result") if isinstance(entry.get("result"), dict) else {}
+            status = entry.get("status", result.get("status", "ok"))
+            if status in {"ok", "success"}:
+                ok_steps += 1
+            else:
+                failed_entries.append(entry)
+            step_summaries.append(
+                {
+                    "step": entry.get("step"),
+                    "tool_name": entry.get("tool_name", ""),
+                    "required": bool(entry.get("required", True)),
+                    "status": status,
+                    "duration_ms": int(result.get("duration_ms", 0) or 0),
+                    "summary": self._summarize_tool_result(entry.get("tool_name", ""), result),
+                }
+            )
+
+        if failed_entries:
+            first_failed = failed_entries[0]
+            developer_summary = (
+                f"Workflow failed after {ok_steps}/{len(execution)} successful steps. "
+                f"First failure: step {first_failed.get('step')} ({first_failed.get('tool_name')}) - "
+                f"{self._summarize_tool_result(first_failed.get('tool_name', ''), first_failed.get('result', {}))}"
+            )
+        else:
+            developer_summary = f"Workflow completed successfully with {ok_steps}/{len(execution)} steps in {duration_ms}ms."
+
+        next_actions = [
+            "Reuse the step summaries to turn this run into a stable skill, script, or test flow.",
+            "Rerun the single failing step directly if you need deeper debugging.",
+            "Persist this sanitized artifact externally if you want a reusable execution record.",
+        ]
+
+        return {
+            "kind": "workflow_execution",
+            "format_version": 1,
+            "generated_at": self._timestamp_utc(),
+            "goal": workflow_goal,
+            "status": overall_status,
+            "executed_steps": len(execution),
+            "duration_ms": duration_ms,
+            "step_summaries": step_summaries,
+            "developer_summary": developer_summary,
+            "next_actions": next_actions,
+        }
+
+    def _build_task_artifact(self, objective: str, path_value, plan: dict, focus_files, deep_file_analysis, status: str):
+        focus_paths = [str(path) for path in (focus_files or [])]
+        developer_summary = (
+            f"Autopilot analyzed '{objective}' and selected {len(focus_paths)} focus files for deeper work."
+            if status == "ok"
+            else f"Autopilot could not complete objective '{objective}'."
+        )
+        return {
+            "kind": "task_autopilot",
+            "format_version": 1,
+            "generated_at": self._timestamp_utc(),
+            "objective": objective,
+            "path": path_value,
+            "status": status,
+            "plan_steps": plan.get("plan_steps", []) if isinstance(plan, dict) else [],
+            "focus_files": focus_paths,
+            "focus_file_count": len(focus_paths),
+            "deep_analysis_count": len(deep_file_analysis or []),
+            "developer_summary": developer_summary,
+            "next_actions": [
+                "Turn the focus files into a deterministic workflow_execute plan.",
+                "Use fs_patch or fs_edit_lines for code changes, then run tests.",
+                "Save or reuse this artifact as the starting point for follow-up work.",
+            ],
+        }
+
+    @staticmethod
     def coerce_tool_result_to_dict(raw_result):
         if isinstance(raw_result, dict):
-            return raw_result
+            return _redact_sensitive_data(raw_result, max_chars=50000)
         text = str(raw_result)
         try:
             parsed = json.loads(text)
             if isinstance(parsed, dict):
-                return parsed
+                return _redact_sensitive_data(parsed, max_chars=50000)
         except Exception:
             pass
-        return {"status": "ok", "raw": text}
+        return {"status": "ok", "raw": _redact_sensitive_text(text, max_chars=50000)}
 
     def _get_available_functions(self):
         if callable(self.available_functions_provider):
@@ -59,9 +177,9 @@ class WorkflowManager:
             result_dict = self.coerce_tool_result_to_dict(raw_result)
             if "status" not in result_dict:
                 result_dict["status"] = "ok"
-            return result_dict
+            return self._sanitize_payload(result_dict, max_chars=50000)
         except Exception as e:
-            return {"status": "failed", "error": str(e)}
+            return {"status": "failed", "error": _redact_sensitive_text(str(e), max_chars=4000)}
 
     async def reasoning_plan(self, kwargs_dict):
         kwargs = kwargs_dict or {}
@@ -71,7 +189,7 @@ class WorkflowManager:
         max_steps = max(3, min(max_steps, 20))
 
         if not goal:
-            return json.dumps({"status": "failed", "error": "goal is required"}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": "goal is required"})
 
         separators = r"(?:\.\s+|;\s+|\n+| then | and then | after that )"
         pieces = [chunk.strip(" -\t\r\n") for chunk in re.split(separators, goal) if chunk.strip(" -\t\r\n")]
@@ -100,7 +218,7 @@ class WorkflowManager:
             "Dynamic websites may require selector fallback and retries.",
         ]
 
-        return json.dumps(
+        return self._json_response(
             {
                 "status": "ok",
                 "goal": goal,
@@ -108,22 +226,22 @@ class WorkflowManager:
                 "assumptions": assumptions,
                 "plan_steps": steps[:max_steps],
                 "risks": risks,
-            },
-            ensure_ascii=True,
+            }
         )
 
     async def workflow_execute(self, kwargs_dict):
         kwargs = kwargs_dict or {}
         steps = kwargs.get("steps", [])
         stop_on_error = bool(kwargs.get("stop_on_error", True))
+        include_artifact = bool(kwargs.get("include_artifact", True))
         max_steps = int(kwargs.get("max_steps", 30))
         max_steps = max(1, min(max_steps, 100))
 
         if not isinstance(steps, list) or not steps:
-            return json.dumps({"status": "failed", "error": "steps must be a non-empty array"}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": "steps must be a non-empty array"})
 
         execution = []
-        workflow_started = time.time()
+        workflow_started = time.perf_counter()
         overall_status = "ok"
 
         for idx, step in enumerate(steps[:max_steps], start=1):
@@ -142,12 +260,12 @@ class WorkflowManager:
                 result = {"status": "failed", "error": "arguments must be an object"}
             elif not tool_name:
                 result = {"status": "failed", "error": "tool_name is required"}
-            elif tool_name in {"workflow_execute"}:
-                result = {"status": "failed", "error": "Recursive workflow_execute is blocked"}
+            elif tool_name in {"workflow_execute", "task_autopilot", "call_tool"}:
+                result = {"status": "failed", "error": f"Orchestration tool '{tool_name}' is blocked inside workflow_execute to prevent recursion"}
             else:
-                step_start = time.time()
+                step_start = time.perf_counter()
                 result = await self._invoke_tool_by_name(tool_name, arguments)
-                result["duration_ms"] = int((time.time() - step_start) * 1000)
+                result["duration_ms"] = int((time.perf_counter() - step_start) * 1000)
 
             status = result.get("status", "ok")
             entry = {
@@ -165,15 +283,20 @@ class WorkflowManager:
                 if stop_on_error:
                     break
 
-        return json.dumps(
-            {
-                "status": overall_status,
-                "executed_steps": len(execution),
-                "duration_ms": int((time.time() - workflow_started) * 1000),
-                "steps": execution,
-            },
-            ensure_ascii=True,
-        )
+        duration_ms = int((time.perf_counter() - workflow_started) * 1000)
+        artifact = self._build_workflow_artifact(execution, overall_status, duration_ms)
+
+        payload = {
+            "status": overall_status,
+            "executed_steps": len(execution),
+            "duration_ms": duration_ms,
+            "steps": execution,
+            "developer_summary": artifact["developer_summary"],
+        }
+        if include_artifact:
+            payload["artifact"] = artifact
+
+        return self._json_response(payload)
 
     async def task_autopilot(self, kwargs_dict):
         kwargs = kwargs_dict or {}
@@ -181,22 +304,22 @@ class WorkflowManager:
         path_value = kwargs.get("path", ".")
         max_focus_files = int(kwargs.get("max_focus_files", 6))
         include_preview = bool(kwargs.get("include_preview", False))
+        include_artifact = bool(kwargs.get("include_artifact", True))
         max_focus_files = max(1, min(max_focus_files, 20))
 
         if not objective:
-            return json.dumps({"status": "failed", "error": "objective is required"}, ensure_ascii=True)
+            return self._json_response({"status": "failed", "error": "objective is required"})
 
         plan = self.coerce_tool_result_to_dict(await self.reasoning_plan({"goal": objective, "context": f"path={path_value}"}))
         base = self.coerce_tool_result_to_dict(await self.codebase_analyze_fn({"path": path_value, "max_files": 2000, "top_n_large_files": 20}))
         if base.get("status") != "ok":
-            return json.dumps(
+            return self._json_response(
                 {
                     "status": "failed",
                     "objective": objective,
                     "plan": plan,
                     "analysis_error": base,
-                },
-                ensure_ascii=True,
+                }
             )
 
         focus_files = []
@@ -226,20 +349,23 @@ class WorkflowManager:
             )
             deep_file_analysis.append({"path": file_path, "analysis": analyzed})
 
-        return json.dumps(
-            {
-                "status": "ok",
-                "objective": objective,
-                "path": path_value,
-                "plan": plan,
-                "codebase": base,
-                "focus_files": focus_files,
-                "deep_file_analysis": deep_file_analysis,
-                "next_actions": [
-                    "Refine target files and run fs_patch/fs_edit_lines for code modifications.",
-                    "Use workflow_execute to run deterministic multi-step tool sequences.",
-                    "Run compile/tests with run_command after modifications.",
-                ],
-            },
-            ensure_ascii=True,
-        )
+        artifact = self._build_task_artifact(objective, path_value, plan, focus_files, deep_file_analysis, status="ok")
+
+        payload = {
+            "status": "ok",
+            "objective": objective,
+            "path": path_value,
+            "plan": plan,
+            "codebase": base,
+            "focus_files": focus_files,
+            "deep_file_analysis": deep_file_analysis,
+            "developer_summary": artifact["developer_summary"],
+            "next_actions": [
+                "Refine target files and run fs_patch/fs_edit_lines for code modifications.",
+                "Use workflow_execute to run deterministic multi-step tool sequences.",
+                "Run compile/tests with run_command after modifications.",
+            ],
+        }
+        if include_artifact:
+            payload["artifact"] = artifact
+        return self._json_response(payload)

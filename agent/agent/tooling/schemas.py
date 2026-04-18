@@ -387,7 +387,7 @@ AGENT_TOOLS: list[ToolSchema] = [
                     "force_refresh": {"type": "boolean", "description": "Ignore cache and fetch new token.", "default": False},
                     "include_access_token": {
                         "type": "boolean",
-                        "description": "Return full token in output. Keep false unless absolutely needed.",
+                        "description": "Request raw token output. The runtime keeps raw token output disabled by default for secret hygiene; prefer oauth_profile-based usage.",
                         "default": False,
                     },
                     "min_ttl_sec": {"type": "number", "description": "Minimum TTL for cache hit.", "default": 60},
@@ -442,7 +442,7 @@ AGENT_TOOLS: list[ToolSchema] = [
                         "default": False,
                     },
                     "headers": {"type": "object", "description": "Optional request headers (string values)."},
-                    "bearer_token": {"type": "string", "description": "Direct bearer token for Authorization header."},
+                    "bearer_token": {"type": "string", "description": "Direct bearer token for Authorization header. Accepted for local use but never echoed back in tool output."},
                     "oauth_profile": {"type": "string", "description": "OAuth profile name to auto-fetch bearer token."},
                     "auth": {
                         "type": "object",
@@ -457,7 +457,7 @@ AGENT_TOOLS: list[ToolSchema] = [
         "type": "function",
         "function": {
             "name": "call_tool",
-            "description": "Invoke another registered tool by name with arguments object.",
+            "description": "Invoke another registered tool by name with arguments object. Returned result text is sanitized for secret-bearing values.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -628,6 +628,7 @@ AGENT_TOOLS: list[ToolSchema] = [
                         },
                     },
                     "stop_on_error": {"type": "boolean", "description": "Stop workflow when a required step fails.", "default": True},
+                    "include_artifact": {"type": "boolean", "description": "Include a sanitized reusable execution artifact and developer summary in the output.", "default": True},
                     "max_steps": {"type": "number", "description": "Safety cap for executed steps.", "default": 30},
                 },
                 "required": ["steps"],
@@ -646,6 +647,7 @@ AGENT_TOOLS: list[ToolSchema] = [
                     "path": {"type": "string", "description": "Workspace path for analysis.", "default": "."},
                     "max_focus_files": {"type": "number", "description": "How many key files to inspect deeply.", "default": 6},
                     "include_preview": {"type": "boolean", "description": "Include content previews in analysis.", "default": False},
+                    "include_artifact": {"type": "boolean", "description": "Include a sanitized reusable task artifact and developer summary in the output.", "default": True},
                 },
                 "required": ["objective"],
             },

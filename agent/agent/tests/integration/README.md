@@ -23,3 +23,12 @@ RUN_MCP_LIVE_TESTS=1 python -m unittest discover -s agent/agent/tests/integratio
 ```
 
 If `RUN_MCP_LIVE_TESTS` is not set to `1`, these tests are skipped.
+
+## Failure artifacts
+- On a live-test failure, artifacts are written to `logs/mcp-live/<test-id>/`.
+- Captured files include the unittest traceback, sanitized current tab state, sanitized browser accessibility snapshot, and an index of MCP output files.
+- Playwright trace saving is enabled by default for live tests through `PLAYWRIGHT_MCP_SAVE_TRACE=true`.
+- Successful runs keep MCP output in a temporary directory and do not leave empty artifact folders behind.
+- Set `MCP_LIVE_CAPTURE_TRACE=0` if you need to disable trace generation for a local run.
+- Raw copied MCP output files are disabled by default to avoid persisting secret-bearing traces or screenshots; set `MCP_LIVE_COPY_RAW_OUTPUT_FILES=1` to opt in when you explicitly need them.
+- Set `MCP_LIVE_ARTIFACTS_DIR=/custom/path` to redirect persisted failure artifacts.

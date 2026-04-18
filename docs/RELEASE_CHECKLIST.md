@@ -2,10 +2,18 @@
 
 Use this checklist before publishing any new release tag.
 
-## 1) Required checks are green
+## 1) All tests pass
+```powershell
+npm run test:all              # JS syntax + 24 JS tests + 65 Python tests
+npm run validate:governance   # .github structure and frontmatter
+npm run mcp:preflight         # Edge browser + EdgeSession verification
+```
+
+## 2) Required CI checks are green
 - Confirm PR checks passed:
   - `test-python-agent`
   - `evaluate`
+  - `validate-live-web-governance`
 - Confirm branch protection is still strict:
   - required review count = `1`
   - code owner reviews = `true`

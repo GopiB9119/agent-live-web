@@ -33,6 +33,34 @@ try:
 except Exception:
     from .diagnostics_tools import DiagnosticsManager
 try:
+    from git_tools import GitManager
+except Exception:
+    from .git_tools import GitManager
+try:
+    from test_gen_tools import TestGenManager
+except Exception:
+    from .test_gen_tools import TestGenManager
+try:
+    from snapshot_tools import SnapshotManager
+except Exception:
+    from .snapshot_tools import SnapshotManager
+try:
+    from refactor_tools import RefactorManager
+except Exception:
+    from .refactor_tools import RefactorManager
+try:
+    from vision_tools import VisionManager
+except Exception:
+    from .vision_tools import VisionManager
+try:
+    from doc_tools import DocManager
+except Exception:
+    from .doc_tools import DocManager
+try:
+    from background_tools import BackgroundTaskManager
+except Exception:
+    from .background_tools import BackgroundTaskManager
+try:
     from tooling.registry import (
         auto_register_missing_local_tool_schemas,
         build_base_available_functions,
@@ -63,6 +91,7 @@ try:
         WEB_FETCH_ALLOW_PRIVATE_ENV,
         WORKSPACE_ROOT,
         is_private_or_local_host as _is_private_or_local_host,
+        redact_sensitive_data as _redact_sensitive_data,
         redact_sensitive_text as _redact_sensitive_text,
         resolve_workspace_path as _resolve_workspace_path,
         run_command_is_safe_in_restricted_mode as _run_command_is_safe_in_restricted_mode,
@@ -81,6 +110,7 @@ except Exception:
         WEB_FETCH_ALLOW_PRIVATE_ENV,
         WORKSPACE_ROOT,
         is_private_or_local_host as _is_private_or_local_host,
+        redact_sensitive_data as _redact_sensitive_data,
         redact_sensitive_text as _redact_sensitive_text,
         resolve_workspace_path as _resolve_workspace_path,
         run_command_is_safe_in_restricted_mode as _run_command_is_safe_in_restricted_mode,
@@ -94,6 +124,8 @@ RETRYABLE_TOOLS = {
     "browser_fill_form",
     "browser_select_option",
     "browser_press_key",
+    "browser_hover",
+    "browser_drag",
     "browser_wait_for",
 }
 STATE_CHANGE_TOOLS = {
@@ -102,6 +134,9 @@ STATE_CHANGE_TOOLS = {
     "browser_fill_form",
     "browser_select_option",
     "browser_press_key",
+    "browser_hover",
+    "browser_drag",
+    "browser_file_upload",
 }
 OWNERSHIP_SKIP_TOOLS = {"browser_tabs", "browser_close", "browser_install"}
 
@@ -157,19 +192,77 @@ DIAGNOSTICS_MANAGER = DiagnosticsManager(
     resolve_workspace_path_fn=_resolve_workspace_path,
     to_bool_fn=_to_bool,
 )
+GIT_MANAGER = GitManager(
+    workspace_root=WORKSPACE_ROOT,
+    resolve_workspace_path_fn=_resolve_workspace_path,
+)
+TEST_GEN_MANAGER = TestGenManager(
+    workspace_root=WORKSPACE_ROOT,
+    resolve_workspace_path_fn=_resolve_workspace_path,
+    fs_manager=FS_MANAGER,
+)
+SNAPSHOT_MANAGER = SnapshotManager(
+    workspace_root=WORKSPACE_ROOT,
+    resolve_workspace_path_fn=_resolve_workspace_path,
+)
+REFACTOR_MANAGER = RefactorManager(
+    workspace_root=WORKSPACE_ROOT,
+    resolve_workspace_path_fn=_resolve_workspace_path,
+    fs_manager=FS_MANAGER,
+)
+VISION_MANAGER = VisionManager(
+    workspace_root=WORKSPACE_ROOT,
+    resolve_workspace_path_fn=_resolve_workspace_path,
+)
+DOC_MANAGER = DocManager(
+    workspace_root=WORKSPACE_ROOT,
+    resolve_workspace_path_fn=_resolve_workspace_path,
+    fs_manager=FS_MANAGER,
+)
+BACKGROUND_MANAGER = BackgroundTaskManager()
 
 
 # Define the local calculator backup tool
 def calculate(expression: str) -> str:
-    """Evaluates a basic math expression securely."""
+    """Evaluates a basic math expression securely using AST parsing."""
+    import ast
+    import operator
+
+    _OPS = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.FloorDiv: operator.floordiv,
+        ast.Mod: operator.mod,
+        ast.Pow: operator.pow,
+        ast.USub: operator.neg,
+        ast.UAdd: operator.pos,
+    }
+
+    def _safe_eval(node):
+        if isinstance(node, ast.Expression):
+            return _safe_eval(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp) and type(node.op) in _OPS:
+            left = _safe_eval(node.left)
+            right = _safe_eval(node.right)
+            if type(node.op) is ast.Pow and right > 100:
+                raise ValueError("Exponent too large")
+            return _OPS[type(node.op)](left, right)
+        if isinstance(node, ast.UnaryOp) and type(node.op) in _OPS:
+            return _OPS[type(node.op)](_safe_eval(node.operand))
+        raise ValueError(f"Unsupported expression node: {type(node).__name__}")
+
     try:
-        allowed_chars = set("0123456789+-*/(). ")
-        if not all(c in allowed_chars for c in expression):
-            return "Error: Invalid characters in math expression. Only digits and +-*/() are allowed."
-        result = eval(expression, {"__builtins__": {}}, {})
+        tree = ast.parse(expression.strip(), mode="eval")
+        result = _safe_eval(tree)
         return str(result)
+    except (ValueError, SyntaxError, TypeError, ZeroDivisionError) as e:
+        return f"Error evaluating expression: {e}"
     except Exception as e:
-        return f"Error evaluating expression: {str(e)}"
+        return f"Error evaluating expression: {e}"
 
 
 # Define the tools available to the OpenAI model (Starting with the local ones)
@@ -303,20 +396,132 @@ async def web_fetch(kwargs_dict):
     return await WEB_MANAGER.web_fetch(kwargs_dict)
 
 
+# --- Git tools ---
+async def git_status(kwargs_dict=None):
+    return await GIT_MANAGER.git_status(kwargs_dict)
+
+async def git_diff(kwargs_dict=None):
+    return await GIT_MANAGER.git_diff(kwargs_dict)
+
+async def git_log(kwargs_dict=None):
+    return await GIT_MANAGER.git_log(kwargs_dict)
+
+async def git_blame(kwargs_dict):
+    return await GIT_MANAGER.git_blame(kwargs_dict)
+
+async def git_commit(kwargs_dict):
+    return await GIT_MANAGER.git_commit(kwargs_dict)
+
+async def git_branch(kwargs_dict=None):
+    return await GIT_MANAGER.git_branch(kwargs_dict)
+
+async def git_stash(kwargs_dict=None):
+    return await GIT_MANAGER.git_stash(kwargs_dict)
+
+
+# --- Test generation tools ---
+async def generate_tests(kwargs_dict):
+    return await TEST_GEN_MANAGER.generate_tests(kwargs_dict)
+
+async def run_tests(kwargs_dict=None):
+    return await TEST_GEN_MANAGER.run_tests(kwargs_dict)
+
+async def coverage_gaps(kwargs_dict):
+    return await TEST_GEN_MANAGER.coverage_gaps(kwargs_dict)
+
+
+# --- Snapshot/rollback tools ---
+async def snapshot_create(kwargs_dict):
+    return await SNAPSHOT_MANAGER.snapshot_create(kwargs_dict)
+
+async def snapshot_restore(kwargs_dict):
+    return await SNAPSHOT_MANAGER.snapshot_restore(kwargs_dict)
+
+async def snapshot_list(kwargs_dict=None):
+    return await SNAPSHOT_MANAGER.snapshot_list(kwargs_dict)
+
+async def snapshot_diff(kwargs_dict):
+    return await SNAPSHOT_MANAGER.snapshot_diff(kwargs_dict)
+
+
+# --- Refactoring tools ---
+async def rename_symbol(kwargs_dict):
+    return await REFACTOR_MANAGER.rename_symbol(kwargs_dict)
+
+async def find_dead_code(kwargs_dict=None):
+    return await REFACTOR_MANAGER.find_dead_code(kwargs_dict)
+
+async def find_duplicates(kwargs_dict=None):
+    return await REFACTOR_MANAGER.find_duplicates(kwargs_dict)
+
+async def code_metrics(kwargs_dict):
+    return await REFACTOR_MANAGER.code_metrics(kwargs_dict)
+
+
+# --- Vision tools ---
+async def vision_encode(kwargs_dict):
+    return await VISION_MANAGER.vision_encode(kwargs_dict)
+
+async def vision_compare(kwargs_dict):
+    return await VISION_MANAGER.vision_compare(kwargs_dict)
+
+async def vision_describe_page(kwargs_dict):
+    return await VISION_MANAGER.vision_describe_page(kwargs_dict)
+
+
+# --- Documentation tools ---
+async def generate_docstrings(kwargs_dict):
+    return await DOC_MANAGER.generate_docstrings(kwargs_dict)
+
+async def generate_changelog_entry(kwargs_dict=None):
+    return await DOC_MANAGER.generate_changelog_entry(kwargs_dict)
+
+async def doc_coverage(kwargs_dict=None):
+    return await DOC_MANAGER.doc_coverage(kwargs_dict)
+
+
+# --- Background task tools ---
+async def bg_submit(kwargs_dict):
+    return await BACKGROUND_MANAGER.bg_submit(kwargs_dict)
+
+async def bg_status(kwargs_dict):
+    return await BACKGROUND_MANAGER.bg_status(kwargs_dict)
+
+async def bg_result(kwargs_dict):
+    return await BACKGROUND_MANAGER.bg_result(kwargs_dict)
+
+async def bg_cancel(kwargs_dict):
+    return await BACKGROUND_MANAGER.bg_cancel(kwargs_dict)
+
+async def bg_list(kwargs_dict=None):
+    return await BACKGROUND_MANAGER.bg_list(kwargs_dict)
+
+
+def _json_safe_response(payload, max_chars=50000):
+    return json.dumps(_redact_sensitive_data(payload, max_chars=max_chars), ensure_ascii=True)
+
+
+def _stringify_sanitized_tool_result(result):
+    if isinstance(result, (dict, list)):
+        return json.dumps(_redact_sensitive_data(result, max_chars=50000), ensure_ascii=True)
+    return _redact_sensitive_text(str(result), max_chars=50000)
+
+
 async def call_tool(kwargs_dict):
     kwargs = kwargs_dict or {}
     tool_name = str(kwargs.get("tool_name", "")).strip()
     arguments = kwargs.get("arguments", {}) or {}
     if not isinstance(arguments, dict):
-        return json.dumps({"status": "failed", "error": "arguments must be an object"}, ensure_ascii=True)
+        return _json_safe_response({"status": "failed", "error": "arguments must be an object"})
     if not tool_name:
-        return json.dumps({"status": "failed", "error": "tool_name is required"}, ensure_ascii=True)
-    if tool_name == "call_tool":
-        return json.dumps({"status": "failed", "error": "Recursive call_tool is not allowed"}, ensure_ascii=True)
+        return _json_safe_response({"status": "failed", "error": "tool_name is required"})
+    _blocked_from_call_tool = {"call_tool", "workflow_execute", "task_autopilot"}
+    if tool_name in _blocked_from_call_tool:
+        return _json_safe_response({"status": "failed", "error": f"Orchestration tool '{tool_name}' cannot be invoked through call_tool to prevent recursion"})
 
     target = AVAILABLE_FUNCTIONS.get(tool_name)
     if not target:
-        return json.dumps({"status": "failed", "error": f"Tool not found: {tool_name}"}, ensure_ascii=True)
+        return _json_safe_response({"status": "failed", "error": f"Tool not found: {tool_name}"})
 
     try:
         if inspect.iscoroutinefunction(target):
@@ -326,9 +531,9 @@ async def call_tool(kwargs_dict):
                 result = target(**arguments)
             except TypeError:
                 result = target(arguments)
-        return json.dumps({"status": "ok", "tool_name": tool_name, "result": str(result)}, ensure_ascii=True)
+        return _json_safe_response({"status": "ok", "tool_name": tool_name, "result": _stringify_sanitized_tool_result(result)})
     except Exception as e:
-        return json.dumps({"status": "failed", "tool_name": tool_name, "error": str(e)}, ensure_ascii=True)
+        return _json_safe_response({"status": "failed", "tool_name": tool_name, "error": str(e)})
 
 
 AVAILABLE_FUNCTIONS.update(build_local_callable_registry(globals()))

@@ -4,10 +4,7 @@ node_modules/
 # Playwright browser profile + MCP runtime artifacts
 .playwright-edge-profile/
 .playwright-mcp/
-C:\\Users\\banot\\AppData\\Local\\PlaywrightMCP\\*
-C:\\Users\\banot\\AppData\\Local\\PlaywrightMCP\\active-owner.txt
-C:\\Users\\banot\\AppData\\Local\\PlaywrightMCP\\edge-profile/**
-C:\\Users\\banot\\AppData\\Local\\PlaywrightMCP\\output/**
+PlaywrightMCP/
 
 # Logs
 logs/
@@ -27,6 +24,7 @@ logs/
 memory/
 MEMORY.md
 .agent-state/
+.agent-snapshots/
 
 # Temp/system files
 *.tmp
@@ -38,3 +36,17 @@ desktop.ini
 # Python cache artifacts
 __pycache__/
 *.pyc
+
+# Python virtual environment
+.venv/
+venv/
+
+# Evaluation pipeline output (generated, not source)
+eval/responses.json
+eval/report.json
+eval/report.md
+eval/flake-report.json
+eval/flake-report.md
+eval/history.jsonl
+eval/trend.json
+# Keep eval/queries.json as it's the dataset definition

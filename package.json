@@ -1,10 +1,17 @@
 {
   "name": "agent-works",
-  "version": "5.1.0",
+  "version": "6.0.0",
   "description": "VS Code-first Playwright Edge MCP toolkit for reliable real-time web automation, tracing, and evaluation.",
   "main": "index.js",
   "scripts": {
     "agent:live-web": "node cli-agent.js",
+    "agent:daemon": "node scripts/resolve-python.js -m agent.agent.background.daemon --start",
+    "agent:daemon:fg": "node scripts/resolve-python.js -m agent.agent.background.daemon --start --foreground",
+    "agent:daemon:stop": "node scripts/resolve-python.js -m agent.agent.background.daemon --stop",
+    "agent:daemon:status": "node scripts/resolve-python.js -m agent.agent.background.daemon --status",
+    "agent:daemon:ensure": "node scripts/resolve-python.js -m agent.agent.background.daemon --ensure",
+    "agent:submit": "node scripts/resolve-python.js -m agent.agent.background.daemon --submit",
+    "agent:tasks": "node scripts/resolve-python.js -m agent.agent.background.daemon --list",
     "mcp:edge": "node scripts/set-mcp-owner.js vscode && node playwright-edge-mcp.js",
     "mcp:owner:vscode": "node scripts/set-mcp-owner.js vscode",
     "trace:jaeger:start": "node scripts/trace-stack-control.js jaeger start",
@@ -35,14 +42,19 @@
     "eval:ci": "npm run eval:all:stress && npm run eval:gate",
     "eval:ci:strict": "npm run eval:all:stress && npm run eval:gate:strict && npm run eval:flake",
     "playwright:edge:smoke": "node scripts/playwright-edge-smoke.js",
+    "mcp:preflight": "node scripts/mcp-preflight.js",
     "trace:playwright:smoke": "node scripts/trace-playwright-smoke.js",
     "health:snapshot": "node scripts/health-snapshot.js",
     "health:snapshot:quiet": "node scripts/health-snapshot.js --quiet",
     "install:edge": "npx playwright install msedge",
-    "check": "node --check cli-agent.js && node --check edge-session.js && node --check nl-command-parser.js && node --check playwright-edge-mcp.js && node --check scripts/mcp-init-page.js",
-    "agent:test:py": "python -m unittest discover -s agent/agent/tests -p \"test_*.py\" -v",
-    "agent:test:py:integration": "python -m unittest discover -s agent/agent/tests/integration -p \"test_*.py\" -v",
-    "test": "npm run check"
+    "validate:task": "node scripts/validate-web-task.js .github/skills/web-works/examples/extract-github-trending.json",
+    "validate:governance": "node scripts/validate-governance.js",
+    "check": "node --check index.js && node --check cli-agent.js && node --check edge-session.js && node --check nl-command-parser.js && node --check playwright-edge-mcp.js && node --check tracing.js && node --check scripts/mcp-init-page.js && node --check scripts/resolve-python.js && node --check scripts/mcp-preflight.js && node --check scripts/validate-web-task.js && node --check scripts/validate-governance.js",
+    "test:js:unit": "node --test tests/*.test.js",
+    "test:py": "node scripts/resolve-python.js -m unittest discover -s agent/agent/tests -p \"test_*.py\" -v",
+    "test:py:integration": "node scripts/resolve-python.js -m unittest discover -s agent/agent/tests/integration -p \"test_*.py\" -v",
+    "test:all": "npm run check && npm run test:js:unit && npm run test:py",
+    "test": "npm run check && npm run test:js:unit"
   },
   "keywords": [
     "playwright",
@@ -56,8 +68,34 @@
     "opentelemetry",
     "tracing"
   ],
-  "author": "",
+  "author": "GopiB9119",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GopiB9119/agent-live-web.git"
+  },
+  "bugs": {
+    "url": "https://github.com/GopiB9119/agent-live-web/issues"
+  },
+  "homepage": "https://github.com/GopiB9119/agent-live-web#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "index.js",
+    "edge-session.js",
+    "nl-command-parser.js",
+    "playwright-edge-mcp.js",
+    "cli-agent.js",
+    "tracing.js",
+    "scripts/mcp-init-page.js",
+    "scripts/set-mcp-owner.js",
+    "scripts/resolve-python.js",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    ".env.example"
+  ],
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.70.1",

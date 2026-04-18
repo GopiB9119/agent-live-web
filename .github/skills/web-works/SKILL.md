@@ -1,33 +1,55 @@
 ---
 name: web-works
-description: Fast website understanding and execution skill for LLM agents with strict verification and optional JSON task contracts.
+description: Use when Playwright Edge MCP, Playwright MCP, live web autonomous workflows, or structured website tasks need fast understanding, strict verification, and controlled side effects.
 ---
 
 # web-works
 
 ## Purpose
-Use this skill when user gives website work and expects fast, accurate execution.
+Use this skill for the VS Code Copilot live-web lane when the task involves websites, browser automation, or a structured Playwright workflow.
 
 This skill standardizes:
+- task intake
 - site understanding
 - selector strategy
-- step-by-step verification
-- JSON-driven automation inputs
+- one-step execution
+- strict verification
+- safe side-effect handling
+- structured handoff
 
-## Trigger
-Activate for requests like:
-- "Open this site and do X"
-- "Scrape/extract details from this web page"
-- "Fill a form/download file/check UI state"
-- "Use this JSON task and execute it"
-- "Handle WhatsApp Web flow"
+## Use this skill for
+- opening and navigating websites or dashboards
+- extracting details from live pages
+- filling forms, downloading files, or checking UI state
+- Playwright Edge MCP or Playwright MCP execution
+- JSON-driven website tasks
+- hybrid flows where browser work and local file work support one live-web goal
+
+## Do not use this skill for
+- unrelated Python runtime-agent work
+- generic repo refactors with no browser or live-web goal
+- irreversible side effects without same-run confirmation
+
+## Required task brief
+Before execution, convert the request into:
+1. What the user wants.
+2. What the user does not want.
+3. Why the task matters.
+4. Which site, app, or workflow is in scope.
+5. Who is acting or supplying auth context.
+6. How to work: `explore`, `extract`, or `automate`; `balanced`, `deep`, or `turbo`.
+7. Bad impact to avoid.
+8. Evidence required.
+9. Stop-and-ask actions.
+10. Done condition.
+
+If the request is missing fields, infer the safest reversible assumption or ask one short question.
 
 ## Input modes
-Two valid input modes are supported.
 
 ### Mode A: Natural language
 Minimum required:
-1. start URL
+1. start URL or target website
 2. goal
 3. success criteria
 
@@ -42,42 +64,30 @@ If JSON is provided, validate first and execute exactly by `steps`.
 ## Execution profiles
 Use `execution_profile` from task JSON:
 - `balanced`: default mode (`understand -> execute -> verify`)
-- `deep`: force deeper analysis before risky/ambiguous steps
+- `deep`: force deeper analysis before risky or ambiguous steps
 - `turbo`: after understanding is clear, reduce tool calls for speed
 
-If task becomes ambiguous or fails repeatedly, switch to `deep` behavior temporarily even when profile is `balanced` or `turbo`.
+If the task becomes ambiguous or fails repeatedly, switch to `deep` behavior temporarily even when profile is `balanced` or `turbo`.
 
-## Cross-conversation resume protocol (required)
-Use file-backed checkpoints so a new chat can continue from where previous chat stopped.
+## Cross-conversation resume protocol
+Use file-backed checkpoints so a new chat can continue from where a previous chat stopped.
 
-1. Resolve checkpoint path:
-- Use `resume.state_file` from task JSON.
-- If missing, default to `.playwright-mcp/resume-state.json`.
-2. On new conversation with "continue/resume":
-- Read checkpoint first.
-- If checkpoint exists and `task_id` matches, resume from `last_completed_step_id + 1`.
-- If checkpoint missing/mismatch, report it and restart from `start_url`.
-3. Resume preflight (before next action):
-- Verify active tab is real (not `about:blank`).
-- Verify current URL/title still matches expected flow.
-- Capture snapshot and re-resolve selectors (never reuse old element handles).
-4. After each successful step, update checkpoint with:
-- `task_id`
-- `last_completed_step_id`
-- `current_url`
-- `updated_at`
-- `status` (`running`/`blocked`/`done`)
-5. On completion, write `status=done` and final evidence summary.
+1. Resolve checkpoint path.
+2. On resume, read checkpoint first.
+3. Verify current tab, URL, and title before the next action.
+4. Re-resolve selectors from the current DOM.
+5. Update the checkpoint after each successful step.
+6. Mark `done` only after final evidence is captured.
 
 ## Execution contract
 For each step:
 1. Plan one atomic action.
 2. Execute one tool call.
 3. Verify expected state.
-4. Retry once with better selector/path.
-5. Stop with blocker if second attempt fails.
+4. Retry once with a better selector or path.
+5. Stop with blocker details if the second attempt fails.
 
-Never claim done without evidence.
+Never claim completion without evidence.
 
 Honor these JSON toggles when provided:
 - `reasoning.understand_first`
@@ -89,30 +99,28 @@ Honor these JSON toggles when provided:
 
 ## Fast website understanding pass
 Run this before heavy actions:
-1. Capture URL, title, page type.
-2. Find primary nav and key CTA/actions.
-3. Identify login wall vs main app shell.
-4. Build shortest path to user goal.
-5. Define verification signal for the next action before executing it.
+1. Capture URL, title, and page type.
+2. Find primary navigation and key CTA surfaces.
+3. Identify login wall, onboarding wall, or main app shell.
+4. Build the shortest safe path to the goal.
+5. Define the verification signal for the next action before executing it.
 
 ## Local file understanding pass
-If task includes files/commands, run this before edits/execution:
-1. Confirm target path(s) exist.
-2. Read relevant files before changing them.
-3. Identify dependencies/config impacted by the change.
-4. Define verification checks (tests/lint/output expectation).
-
-Do not run write commands before this pass.
+If the task also includes files or commands:
+1. Confirm target paths exist.
+2. Read relevant files before editing.
+3. Identify impacted config or runtime surfaces.
+4. Define validation before the first write.
 
 ## Selector policy
 Use selector fallback order:
-1. role/aria
+1. role or aria
 2. stable attributes (`data-*`, `id`, `name`)
-3. label/placeholder
+3. label or placeholder
 4. xpath
 5. text-only fallback
 
-Avoid generic `getByText("Search")` as first selector on dynamic apps.
+Avoid generic text-only selectors as the first choice on dynamic apps.
 
 ## Evidence rules
 Use concrete checks:
@@ -120,7 +128,22 @@ Use concrete checks:
 - typing: field value updated
 - click: resulting UI state change
 - extraction: exact text and element context
-- download: file path + extension + size > 0
+- download: file path, extension, and size > 0
+
+## Failure and bad-impact control
+Primary bad impacts:
+- wrong site or page
+- wrong account or auth state
+- wrong element interaction
+- unintended send, submit, or purchase
+- wrong summary with weak evidence
+
+After the first failure:
+1. Freeze repeated actions.
+2. Capture URL, title, visible state, and likely blocker.
+3. Change one variable.
+4. Retry once.
+5. Stop with blocker if it still fails.
 
 ## Side-effect safety
 Require explicit confirmation before:
@@ -133,33 +156,17 @@ Require explicit confirmation before:
 
 For messaging apps, draft first and ask before send.
 
-## WhatsApp Web profile
-When `site_profile` is `whatsapp-web`:
-1. Open `https://web.whatsapp.com`.
-2. Wait for either app shell or QR login wall.
-3. If QR wall present, pause for user login.
-4. Search contact with robust selectors.
-5. Open matching chat and verify header text.
-6. Type message draft and verify compose box value.
-7. Ask confirmation before send.
-
-Use `web-task.template.json` and set:
-- `site_profile` to `whatsapp-web`
-- `start_url` to `https://web.whatsapp.com`
-- `side_effect_policy.auto_send_allowed` to `false` unless user explicitly requests auto-send
-
 ## Output format per step
 Use:
+- `Understanding:`
 - `Action:`
 - `Tool:`
 - `Verification:`
 - `Next:`
 
-Also include:
-- `Understanding:` one-line state summary before first action.
-
 ## Definition of done
 Done only when:
-- requested result is complete
+- the requested result is complete
 - evidence is shown for critical steps
 - no unresolved blocker remains
+- the handoff is clear and actionable

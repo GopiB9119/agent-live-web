@@ -1,0 +1,91 @@
+{
+  "version": "1.1",
+  "task_id": "example-github-trending",
+  "mode": "extract",
+  "execution_profile": "balanced",
+  "site_profile": "generic",
+  "start_url": "https://github.com/trending",
+  "allowed_domains": [
+    "github.com"
+  ],
+  "objective": "Extract the top 5 trending repositories from GitHub Trending page, including repo name, description, language, and star count.",
+  "success_criteria": [
+    "Page loads and shows trending repositories",
+    "At least 5 repo entries are extracted",
+    "Each entry has repo name, description, language, and stars"
+  ],
+  "constraints": {
+    "max_steps": 10,
+    "timeout_seconds": 60,
+    "headless": false
+  },
+  "reasoning": {
+    "understand_first": true,
+    "auto_escalate_deep_research": false,
+    "max_retries_per_step": 1
+  },
+  "response_quality": {
+    "fix_grammar": true,
+    "strict_format": true,
+    "concise_step_reports": true
+  },
+  "session": {
+    "reuse_browser_context": true,
+    "wait_after_navigation_ms": 2000
+  },
+  "resume": {
+    "enabled": false,
+    "state_file": ".playwright-mcp/resume-state.json",
+    "continue_from_last_step": true,
+    "require_preflight": true
+  },
+  "side_effect_policy": {
+    "require_confirmation_for": ["submit", "delete", "purchase", "send"],
+    "auto_send_allowed": false
+  },
+  "steps": [
+    {
+      "id": "open-trending",
+      "action": "navigate",
+      "target": {
+        "url": "https://github.com/trending"
+      },
+      "verify": {
+        "url_contains": "github.com/trending"
+      }
+    },
+    {
+      "id": "snapshot-page",
+      "action": "snapshot",
+      "target": {},
+      "verify": {
+        "element_visible": "article.Box-row"
+      }
+    },
+    {
+      "id": "extract-repos",
+      "action": "extract",
+      "target": {
+        "selector": "article.Box-row",
+        "fields": ["repo_name", "description", "language", "stars"]
+      },
+      "verify": {
+        "min_results": 5
+      }
+    }
+  ],
+  "output": {
+    "format": "json",
+    "fields": [
+      "task_id",
+      "final_url",
+      "result",
+      "step_count",
+      "evidence_screenshot"
+    ],
+    "evidence": {
+      "screenshot": true,
+      "dom_snapshot": false
+    }
+  }
+}

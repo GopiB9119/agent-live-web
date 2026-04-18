@@ -35,6 +35,42 @@ LOCAL_CALLABLE_NAMES = [
     "run_command",
     "web_fetch",
     "call_tool",
+    # Git tools
+    "git_status",
+    "git_diff",
+    "git_log",
+    "git_blame",
+    "git_commit",
+    "git_branch",
+    "git_stash",
+    # Test generation tools
+    "generate_tests",
+    "run_tests",
+    "coverage_gaps",
+    # Snapshot/rollback tools
+    "snapshot_create",
+    "snapshot_restore",
+    "snapshot_list",
+    "snapshot_diff",
+    # Refactoring tools
+    "rename_symbol",
+    "find_dead_code",
+    "find_duplicates",
+    "code_metrics",
+    # Vision tools
+    "vision_encode",
+    "vision_compare",
+    "vision_describe_page",
+    # Documentation tools
+    "generate_docstrings",
+    "generate_changelog_entry",
+    "doc_coverage",
+    # Background task tools
+    "bg_submit",
+    "bg_status",
+    "bg_result",
+    "bg_cancel",
+    "bg_list",
 ]
 
 

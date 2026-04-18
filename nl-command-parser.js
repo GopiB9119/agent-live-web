@@ -200,6 +200,80 @@ function parseCommand(input) {
     }
   }
 
+  // Navigation shortcuts
+  if (/^(go\s+)?back$/i.test(command)) {
+    return { action: 'back', params: {} };
+  }
+  if (/^(go\s+)?forward$/i.test(command)) {
+    return { action: 'forward', params: {} };
+  }
+  if (/^(refresh|reload)$/i.test(command)) {
+    return { action: 'refresh', params: {} };
+  }
+
+  // Press key
+  {
+    const pressMatch = command.match(/^press\s+(.+)$/i);
+    if (pressMatch) {
+      return { action: 'press', params: { key: unquote(pressMatch[1]) } };
+    }
+  }
+
+  // Hover
+  {
+    const hoverMatch = command.match(/^hover(?:\s+(?:over|on))?\s+(.+)$/i);
+    if (hoverMatch) {
+      const token = parseSelectorToken(hoverMatch[1]);
+      return { action: 'hover', params: selectorParams(token) };
+    }
+  }
+
+  // Select option from dropdown
+  {
+    const selectMatch = command.match(/^(?:select|choose)\s+(.+?)\s+(?:from|in)\s+(.+)$/i);
+    if (selectMatch) {
+      const value = unquote(selectMatch[1]);
+      const token = parseSelectorToken(selectMatch[2]);
+      return { action: 'select', params: { ...selectorParams(token), value } };
+    }
+  }
+
+  // Focus element
+  {
+    const focusMatch = command.match(/^focus(?:\s+on)?\s+(.+)$/i);
+    if (focusMatch) {
+      const token = parseSelectorToken(focusMatch[1]);
+      return { action: 'focus', params: selectorParams(token) };
+    }
+  }
+
+  // Clear input
+  {
+    const clearMatch = command.match(/^clear\s+(.+)$/i);
+    if (clearMatch) {
+      const token = parseSelectorToken(clearMatch[1]);
+      return { action: 'clear', params: selectorParams(token) };
+    }
+  }
+
+  // Double-click
+  {
+    const dblClickMatch = command.match(/^(?:double[- ]?click|dblclick)\s+(.+)$/i);
+    if (dblClickMatch) {
+      const token = parseSelectorToken(dblClickMatch[1]);
+      return { action: 'doubleClick', params: selectorParams(token) };
+    }
+  }
+
+  // Right-click
+  {
+    const rightClickMatch = command.match(/^(?:right[- ]?click|contextmenu)\s+(.+)$/i);
+    if (rightClickMatch) {
+      const token = parseSelectorToken(rightClickMatch[1]);
+      return { action: 'rightClick', params: selectorParams(token) };
+    }
+  }
+
   return { action: 'unknown', params: { command } };
 }
 

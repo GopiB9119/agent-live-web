@@ -1,0 +1,104 @@
+{
+  "version": "1.1",
+  "task_id": "example-search-and-click",
+  "mode": "automate",
+  "execution_profile": "balanced",
+  "site_profile": "generic",
+  "start_url": "https://www.wikipedia.org",
+  "allowed_domains": [
+    "wikipedia.org",
+    "en.wikipedia.org"
+  ],
+  "objective": "Search Wikipedia for 'Playwright (software)' and navigate to the article page.",
+  "success_criteria": [
+    "Search executes successfully",
+    "Article page for Playwright loads",
+    "Page title contains 'Playwright'"
+  ],
+  "constraints": {
+    "max_steps": 10,
+    "timeout_seconds": 60,
+    "headless": false
+  },
+  "reasoning": {
+    "understand_first": true,
+    "auto_escalate_deep_research": false,
+    "max_retries_per_step": 1
+  },
+  "response_quality": {
+    "fix_grammar": true,
+    "strict_format": true,
+    "concise_step_reports": true
+  },
+  "session": {
+    "reuse_browser_context": true,
+    "wait_after_navigation_ms": 2000
+  },
+  "resume": {
+    "enabled": false,
+    "state_file": ".playwright-mcp/resume-state.json",
+    "continue_from_last_step": true,
+    "require_preflight": true
+  },
+  "side_effect_policy": {
+    "require_confirmation_for": ["submit", "delete", "purchase", "send"],
+    "auto_send_allowed": false
+  },
+  "steps": [
+    {
+      "id": "open-wikipedia",
+      "action": "navigate",
+      "target": {
+        "url": "https://www.wikipedia.org"
+      },
+      "verify": {
+        "url_contains": "wikipedia.org"
+      }
+    },
+    {
+      "id": "type-search",
+      "action": "type",
+      "target": {
+        "selector": "#searchInput",
+        "selector_type": "css"
+      },
+      "value": "Playwright (software)",
+      "verify": {
+        "element_value": "Playwright (software)"
+      }
+    },
+    {
+      "id": "submit-search",
+      "action": "click",
+      "target": {
+        "selector": "button[type='submit']",
+        "selector_type": "css"
+      },
+      "verify": {
+        "url_contains": "wikipedia.org"
+      }
+    },
+    {
+      "id": "verify-article",
+      "action": "snapshot",
+      "target": {},
+      "verify": {
+        "title_contains": "Playwright"
+      }
+    }
+  ],
+  "output": {
+    "format": "json",
+    "fields": [
+      "task_id",
+      "final_url",
+      "result",
+      "step_count",
+      "evidence_screenshot"
+    ],
+    "evidence": {
+      "screenshot": true,
+      "dom_snapshot": false
+    }
+  }
+}

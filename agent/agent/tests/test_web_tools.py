@@ -95,7 +95,10 @@ class WebManagerTests(unittest.IsolatedAsyncioTestCase):
         def _fake_urlopen(req, timeout=0):
             captured["authorization"] = req.get_header("Authorization")
             captured["timeout"] = timeout
-            return _FakeResponse("<html><head><title>Example</title></head><body>hello world</body></html>")
+            return _FakeResponse(
+                "<html><head><title>Example</title></head><body>hello world token=abc123 Authorization=secret-value</body></html>",
+                url="https://example.com/final?access_token=abc123&state=ok",
+            )
 
         with patch("web_tools.urllib.request.urlopen", side_effect=_fake_urlopen):
             raw = await self.manager.web_fetch(
@@ -109,6 +112,10 @@ class WebManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["title"], "Example")
         self.assertIn("hello world", result["text"].lower())
+        self.assertIn("token=[REDACTED]", result["body"])
+        self.assertIn("Authorization=[REDACTED]", result["text"])
+        self.assertIn("access_token=[REDACTED]", result["url"])
+        self.assertNotIn("abc123", result["body"])
         self.assertEqual(result["auth"]["mode"], "oauth_profile")
         self.assertTrue(self.oauth.calls)
         self.assertTrue(str(captured.get("authorization", "")).startswith("Bearer "))

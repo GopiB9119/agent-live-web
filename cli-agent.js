@@ -20,6 +20,14 @@ Natural language commands:
 - download css:a.download to ./downloads/report.pdf
 - scroll down 800
 - screenshot to ./screenshots/page.png
+- back / forward / refresh
+- press Enter / press Tab
+- hover css:.menu-item
+- select "Option A" from css:#dropdown
+- focus css:#email
+- clear css:#search
+- double-click css:.cell
+- right-click css:.file-item
 - start trace
 - stop trace to ./traces/run.zip
 
@@ -79,10 +87,14 @@ Session commands:
       const result = await runInSpan(
         'cli.command.execute',
         { 'app.command.action': parsed.action },
-        async () => session.act(parsed.action, parsed.params)
+        async () => session.runAction(parsed.action, parsed.params)
       );
       if (result !== undefined) {
-        console.log(`Result: ${JSON.stringify(result)}`);
+        const safeResult = session.sanitizeActionResponse(result);
+        if (safeResult && safeResult.summary) {
+          console.log(`Summary: ${safeResult.summary}`);
+        }
+        console.log(`Result: ${JSON.stringify(safeResult)}`);
       }
     } catch (error) {
       console.error(`Error: ${error.message}`);

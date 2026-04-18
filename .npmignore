@@ -1,0 +1,50 @@
+# npm publish ignore — ship only what users need
+# Source: keep index.js, edge-session.js, nl-command-parser.js,
+#         playwright-edge-mcp.js, cli-agent.js, tracing.js
+
+# Exclude development/CI files
+.git/
+.github/
+.devcontainer/
+.vscode/
+.playwright-edge-profile/
+.playwright-mcp/
+PlaywrightMCP/
+.agent-state/
+.venv/
+venv/
+
+# Python agent (not needed for npm JS package)
+agent/
+docs/generate_api_docs.py
+
+# Test and eval
+tests/
+eval/
+scripts/eval/
+
+# Logs and memory (runtime artifacts)
+logs/
+memory/
+MEMORY.md
+
+# Build artifacts
+__pycache__/
+*.pyc
+node_modules/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Docker
+Dockerfile
+.dockerignore
+
+# System files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+desktop.ini
