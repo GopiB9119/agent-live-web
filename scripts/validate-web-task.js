@@ -1,19 +1,17 @@
 #!/usr/bin/env node
 'use strict';
 
-// Validates a web-task JSON file against the schema and reports issues.
+// Validates a web-task JSON file and reports issues.
 // Usage: node scripts/validate-web-task.js <path-to-task.json>
 
 const fs = require('fs');
-const path = require('path');
-
-const SCHEMA_PATH = path.join(__dirname, '..', '.github', 'skills', 'web-works', 'web-task.schema.json');
 
 const REQUIRED_FIELDS = ['version', 'task_id', 'mode', 'start_url', 'objective', 'success_criteria', 'side_effect_policy', 'steps', 'output'];
 const VALID_MODES = ['explore', 'extract', 'automate', 'qa'];
 const VALID_PROFILES = ['balanced', 'deep', 'turbo'];
 const VALID_VERSIONS = ['1.0', '1.1'];
 const STEP_ACTIONS = ['navigate', 'click', 'type', 'fill', 'press', 'select', 'hover', 'search', 'wait', 'check', 'extract', 'scroll', 'download', 'upload', 'screenshot', 'snapshot', 'back', 'forward', 'refresh', 'delete', 'focus', 'clear', 'doubleClick', 'rightClick', 'evaluate'];
+const TARGET_OPTIONAL_ACTIONS = new Set(['wait', 'screenshot', 'snapshot', 'back', 'forward', 'refresh']);
 
 function validate(taskPath) {
   const errors = [];
@@ -111,7 +109,7 @@ function validate(taskPath) {
           warnings.push(`${prefix}: action "${step.action}" is not a standard action (${STEP_ACTIONS.join(', ')})`);
         }
 
-        if (!step.target && step.action !== 'wait' && step.action !== 'screenshot') {
+        if (!step.target && !TARGET_OPTIONAL_ACTIONS.has(step.action)) {
           warnings.push(`${prefix}: no "target" defined — may need selector or URL`);
         }
 
@@ -149,7 +147,9 @@ function validate(taskPath) {
     } else if (data.start_url) {
       try {
         const startHost = new URL(data.start_url).hostname;
-        const domainMatch = data.allowed_domains.some(d => startHost.includes(d));
+        const domainMatch = data.allowed_domains.some((d) => (
+          typeof d === 'string' && (startHost === d || startHost.endsWith(`.${d}`))
+        ));
         if (!domainMatch) {
           warnings.push(`start_url host "${startHost}" is not in allowed_domains — agent may be blocked from navigating`);
         }
@@ -167,12 +167,12 @@ const taskFile = process.argv[2];
 if (!taskFile) {
   console.log('Usage: node scripts/validate-web-task.js <path-to-task.json>');
   console.log('');
-  console.log('Validates a web-task definition against the schema.');
+  console.log('Validates a web-task definition.');
   console.log('');
   console.log('Examples:');
   console.log('  node scripts/validate-web-task.js .github/skills/web-works/examples/extract-github-trending.json');
   console.log('  node scripts/validate-web-task.js my-task.json');
-  process.exit(0);
+  process.exit(1);
 }
 
 const result = validate(taskFile);

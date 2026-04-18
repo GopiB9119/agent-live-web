@@ -68,7 +68,7 @@ function report(name, ok, detail) {
       report('Navigation', navOk, `url=${pageUrl.slice(0, 60)}`);
 
       // Grounded summary check — use runAction which produces the summary
-      const gotoResult = await session.runAction('goto', { url: 'https://example.com' });
+      const gotoResult = await session.runAction('goto', { url: 'data:text/html,<p>grounded-summary-check</p>' });
       const hasSummary = typeof gotoResult.summary === 'string' && gotoResult.summary.length > 0;
       report('Grounded summary', hasSummary, gotoResult.summary ? gotoResult.summary.slice(0, 80) : 'missing');
 

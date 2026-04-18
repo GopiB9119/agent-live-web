@@ -101,7 +101,7 @@ class DocManager:
             elif language in {"javascript", "typescript"}:
                 params_list = [p.strip().split("=")[0].split(":")[0].strip()
                                for p in fn.get("params", "").split(",") if p.strip()]
-                param_docs = "\n".join(f" * @param {{{fn.get('return_type', 'any')}}} {p} - Description." for p in params_list)
+                param_docs = "\n".join(f" * @param {{any}} {p} - Description." for p in params_list)
                 returns = f"\n * @returns {{{fn.get('return_type', 'any')}}} Result." if fn.get("return_type") else ""
                 jsdoc = f"/**\n * {fn['name']}: TODO describe purpose.\n{param_docs}{returns}\n */"
                 generated.append({"name": fn["name"], "line": fn["line"], "docstring": jsdoc})

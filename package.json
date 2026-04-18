@@ -47,7 +47,7 @@
     "health:snapshot": "node scripts/health-snapshot.js",
     "health:snapshot:quiet": "node scripts/health-snapshot.js --quiet",
     "install:edge": "npx playwright install msedge",
-    "validate:task": "node scripts/validate-web-task.js",
+    "validate:task": "node scripts/validate-web-task.js .github/skills/web-works/examples/extract-github-trending.json",
     "validate:governance": "node scripts/validate-governance.js",
     "check": "node --check index.js && node --check cli-agent.js && node --check edge-session.js && node --check nl-command-parser.js && node --check playwright-edge-mcp.js && node --check tracing.js && node --check scripts/mcp-init-page.js && node --check scripts/resolve-python.js && node --check scripts/mcp-preflight.js && node --check scripts/validate-web-task.js && node --check scripts/validate-governance.js",
     "test:js:unit": "node --test tests/*.test.js",

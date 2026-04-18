@@ -52,7 +52,7 @@ Workflow outputs should also leave behind a sanitized reusable execution artifac
 npm install
 npm run install:edge
 cp .env.example .env     # then edit .env with your API keys
-npm test                 # syntax check + 24 JS unit tests
+npm test                 # syntax checks + JS unit tests
 ```
 
 See `docs/USAGE_QUICKSTART.md` for the full zero-to-working guide covering all three runtimes.
@@ -67,8 +67,8 @@ See `docs/USAGE_QUICKSTART.md` for the full zero-to-working guide covering all t
 ## Test
 ```bash
 npm test              # JS syntax check + JS unit tests (44 tests)
-npm run test:py       # Python unit tests (92 tests)
-npm run test:all      # Both JS and Python in one command (136 total)
+npm run test:py       # Python unit tests
+npm run test:all      # JS syntax checks + JS and Python unit tests
 ```
 
 ## Python Agent Model Config

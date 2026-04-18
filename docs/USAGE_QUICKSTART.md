@@ -44,8 +44,8 @@ pip install -r agent/agent/requirements.txt
 ## 5) Verify everything works
 ```powershell
 npm run check                    # JS syntax validation
-npm run test:js:unit             # 16 JS unit tests
-.\.venv\Scripts\python.exe -m unittest discover -s agent/agent/tests -p "test_*.py" -v  # 64 Python tests
+npm run test:js:unit             # JS unit tests
+.\.venv\Scripts\python.exe -m unittest discover -s agent/agent/tests -p "test_*.py" -v  # Python unit tests
 ```
 
 ## 6) Use: VS Code MCP mode (recommended)

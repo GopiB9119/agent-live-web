@@ -26,7 +26,13 @@ COPY agent/ ./agent/
 COPY .env.example ./.env.example
 
 # Install Playwright browsers (Edge)
-RUN npx playwright install --with-deps msedge || true
+ARG PLAYWRIGHT_EDGE_INSTALL_STRICT=true
+RUN if [ "$PLAYWRIGHT_EDGE_INSTALL_STRICT" = "true" ]; then \
+      npx playwright install --with-deps msedge; \
+    else \
+      echo "PLAYWRIGHT_EDGE_INSTALL_STRICT=false; allowing Edge install failure" >&2; \
+      npx playwright install --with-deps msedge || echo "Edge install failed but was allowed by build arg" >&2; \
+    fi
 
 # Set environment defaults
 ENV NODE_ENV=production \
