@@ -13,6 +13,14 @@ const VALID_VERSIONS = ['1.0', '1.1'];
 const STEP_ACTIONS = ['navigate', 'click', 'type', 'fill', 'press', 'select', 'hover', 'search', 'wait', 'check', 'extract', 'scroll', 'download', 'upload', 'screenshot', 'snapshot', 'back', 'forward', 'refresh', 'delete', 'focus', 'clear', 'doubleClick', 'rightClick', 'evaluate'];
 const TARGET_OPTIONAL_ACTIONS = new Set(['wait', 'screenshot', 'snapshot', 'back', 'forward', 'refresh']);
 
+function normalizeAllowedDomain(domain) {
+  if (typeof domain !== 'string') return '';
+  const trimmed = domain.trim().toLowerCase();
+  if (!trimmed) return '';
+  const withoutWildcard = trimmed.startsWith('*.') ? trimmed.slice(2) : trimmed;
+  return withoutWildcard.split(':')[0];
+}
+
 function validate(taskPath) {
   const errors = [];
   const warnings = [];
@@ -146,10 +154,11 @@ function validate(taskPath) {
       errors.push('allowed_domains must be an array');
     } else if (data.start_url) {
       try {
-        const startHost = new URL(data.start_url).hostname;
-        const domainMatch = data.allowed_domains.some((d) => (
-          typeof d === 'string' && (startHost === d || startHost.endsWith(`.${d}`))
-        ));
+        const startHost = new URL(data.start_url).hostname.toLowerCase();
+        const domainMatch = data.allowed_domains.some((d) => {
+          const normalized = normalizeAllowedDomain(d);
+          return normalized && (startHost === normalized || startHost.endsWith(`.${normalized}`));
+        });
         if (!domainMatch) {
           warnings.push(`start_url host "${startHost}" is not in allowed_domains — agent may be blocked from navigating`);
         }

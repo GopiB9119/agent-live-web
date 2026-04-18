@@ -48,7 +48,11 @@ try {
   if (result.error) {
     throw result.error;
   }
+  if (result.signal) {
+    process.stderr.write(`Python process terminated by signal: ${result.signal}\n`);
+    process.exit(1);
+  }
   process.exit(result.status ?? 1);
 } catch (error) {
-  process.exit(error.status || 1);
+  process.exit(typeof error.status === 'number' ? error.status : 1);
 }
