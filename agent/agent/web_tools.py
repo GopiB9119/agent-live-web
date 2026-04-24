@@ -136,7 +136,8 @@ class WebManager:
                 if any(ch in key_text for ch in ["\n", "\r", ":"]) or any(ch in value_text for ch in ["\n", "\r"]):
                     return json.dumps({"status": "failed", "error": "Invalid header key/value."}, ensure_ascii=True)
                 request_headers[key_text] = value_text
-            if bearer_token and "Authorization" not in request_headers:
+            has_authorization_header = any(str(k).lower() == "authorization" for k in request_headers)
+            if bearer_token and not has_authorization_header:
                 request_headers["Authorization"] = f"Bearer {bearer_token}"
 
             req = urllib.request.Request(
