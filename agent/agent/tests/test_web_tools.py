@@ -113,6 +113,26 @@ class WebManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.oauth.calls)
         self.assertTrue(str(captured.get("authorization", "")).startswith("Bearer "))
 
+    async def test_web_fetch_does_not_override_existing_authorization_header_case_insensitive(self):
+        captured = {}
+
+        def _fake_urlopen(req, timeout=0):
+            headers = dict(req.header_items())
+            captured["authorization"] = headers.get("Authorization")
+            return _FakeResponse("<html><head><title>Example</title></head><body>ok</body></html>")
+
+        with patch("web_tools.urllib.request.urlopen", side_effect=_fake_urlopen):
+            raw = await self.manager.web_fetch(
+                {
+                    "url": "https://example.com",
+                    "headers": {"authorization": "Bearer existing-token"},
+                    "bearer_token": "new-token-should-not-be-used",
+                }
+            )
+        result = json.loads(raw)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(captured.get("authorization"), "Bearer existing-token")
+
 
 if __name__ == "__main__":
     unittest.main()
