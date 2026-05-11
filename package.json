@@ -60,10 +60,10 @@
   "license": "MIT",
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/auto-instrumentations-node": "^0.70.1",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.212.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.75.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.217.0",
     "@opentelemetry/resources": "^2.5.1",
-    "@opentelemetry/sdk-node": "^0.212.0",
+    "@opentelemetry/sdk-node": "^0.217.0",
     "@opentelemetry/semantic-conventions": "^1.40.0",
     "playwright": "^1.58.2"
   }
